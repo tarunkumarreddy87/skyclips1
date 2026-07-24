@@ -1,0 +1,18 @@
+[project]
+name = "hanuman-timeline-schema"
+version = "0.1.0"
+description = "Timeline manifest JSON Schema validation for HANUMAN workers"
+requires-python = ">=3.12"
+dependencies = [
+    "jsonschema>=4.23.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["hanuman_timeline_schema"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"hanuman_timeline_schema/schema/timeline.v1.json" = "hanuman_timeline_schema/schema/timeline.v1.json"

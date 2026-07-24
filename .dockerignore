@@ -1,0 +1,56 @@
+# Dependencies (reinstalled inside each image)
+node_modules/
+**/node_modules/
+.pnpm-store/
+
+# Python caches and venvs
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+**/.venv/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Next.js build output (regenerated in image)
+apps/web/.next/
+apps/web/out/
+
+# Environment & secrets
+.env
+.env.local
+.env.*.local
+
+# IDE / OS
+.idea/
+.vscode/
+.cursor/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Docker override
+infrastructure/docker-compose.override.yml
+
+# Logs
+*.log
+
+# Media proof artifacts
+workers/media/proofs/*.mp4
+workers/media/proofs/*.manifest.json
+
+# Turbo cache
+.turbo/
+
+# Git
+.git/
+
+# Docs (not needed at runtime)
+docs/
+README.md

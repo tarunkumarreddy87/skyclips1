@@ -1,0 +1,4 @@
+# Copy to docker-compose.override.yml for local customizations.
+# Example: mount source for hot reload inside containers (Phase 1+).
+
+services: {}

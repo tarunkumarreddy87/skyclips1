@@ -1,0 +1,128 @@
+{
+  "version": "1",
+  "metadata": {
+    "project_id": "00000000-0000-4000-8000-000000000001",
+    "run_id": "00000000-0000-4000-8000-000000000002",
+    "format_mode": "documentary",
+    "resolution": { "width": 1920, "height": 1080 },
+    "fps": 30,
+    "duration_sec": 6.0
+  },
+  "tracks": {
+    "video": [
+      {
+        "id": "clip-a",
+        "scene_id": "scene-1",
+        "type": "image",
+        "src": "color:#1a365d",
+        "start_sec": 0,
+        "duration_sec": 2.2,
+        "fit": "cover",
+        "animation": {
+          "in": { "preset": "fade", "duration_sec": 0.5 },
+          "loop": { "preset": "ken_burns" }
+        }
+      },
+      {
+        "id": "clip-b",
+        "scene_id": "scene-2",
+        "type": "image",
+        "src": "color:#9b2c2c",
+        "start_sec": 2.2,
+        "duration_sec": 2.2,
+        "fit": "cover",
+        "animation": {
+          "in": { "preset": "zoom_in", "duration_sec": 0.55 },
+          "out": { "preset": "slide", "duration_sec": 0.4 }
+        }
+      },
+      {
+        "id": "clip-c",
+        "scene_id": "scene-3",
+        "type": "image",
+        "src": "color:#276749",
+        "start_sec": 4.4,
+        "duration_sec": 2.2,
+        "fit": "cover",
+        "transform": { "x": 50, "y": 50, "scaleX": 1.05, "scaleY": 1.05, "rotation": -2 },
+        "animation": {
+          "in": { "preset": "bounce", "duration_sec": 0.55 },
+          "out": { "preset": "spin", "duration_sec": 0.45 }
+        }
+      }
+    ],
+    "audio": [],
+    "captions": [
+      {
+        "id": "cap-1",
+        "section_id": "scene-1",
+        "text": "Library proof — fade + ken burns",
+        "start_sec": 0.25,
+        "duration_sec": 1.7,
+        "style": { "font_size_px": 44, "color": "#ffffff", "font_weight": "700" },
+        "animation": { "in": { "preset": "slide", "duration_sec": 0.35 } }
+      },
+      {
+        "id": "cap-2",
+        "section_id": "scene-2",
+        "text": "Film-burn → zoom_in scene",
+        "start_sec": 2.4,
+        "duration_sec": 1.6,
+        "style": { "font_size_px": 44, "color": "#fefcbf", "font_weight": "700" }
+      }
+    ],
+    "broll": [
+      {
+        "id": "broll-1",
+        "scene_id": "scene-2",
+        "type": "image",
+        "src": "color:#ed8936",
+        "start_sec": 2.6,
+        "duration_sec": 1.4,
+        "fit": "cover",
+        "transform": { "x": 82, "y": 78, "scaleX": 1, "scaleY": 1, "rotation": 0, "zIndex": 5 },
+        "animation": { "in": { "preset": "pop", "duration_sec": 0.45 } }
+      }
+    ]
+  },
+  "transitions": [
+    {
+      "id": "tr-1",
+      "after_clip_id": "clip-a",
+      "type": "film-burn",
+      "duration_sec": 0.55,
+      "enabled": true
+    },
+    {
+      "id": "tr-2",
+      "after_clip_id": "clip-b",
+      "type": "zoom",
+      "duration_sec": 0.5,
+      "enabled": true
+    }
+  ],
+  "overlays": [
+    {
+      "id": "cta-1",
+      "type": "subscribe_cta",
+      "text": "Subscribe",
+      "start_sec": 4.6,
+      "duration_sec": 1.3,
+      "transform": { "x": 88, "y": 18, "scaleX": 1, "scaleY": 1, "rotation": 0, "zIndex": 30 },
+      "animation": { "in": { "preset": "pop", "duration_sec": 0.4 }, "loop": { "preset": "pulse" } }
+    },
+    {
+      "id": "lt-1",
+      "type": "chapter_title",
+      "text": "Lower third · Mass Struggle",
+      "start_sec": 2.5,
+      "duration_sec": 1.5,
+      "transform": { "x": 28, "y": 82, "scaleX": 1, "scaleY": 1, "rotation": 0, "zIndex": 25 },
+      "animation": { "in": { "preset": "slide", "duration_sec": 0.4 } }
+    }
+  ],
+  "settings": {
+    "captions_enabled": true,
+    "theme_id": "history"
+  }
+}

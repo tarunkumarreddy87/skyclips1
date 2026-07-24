@@ -1,0 +1,131 @@
+{
+  "version": "2",
+  "metadata": {
+    "project_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "run_id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+    "format_mode": "documentary",
+    "resolution": { "width": 1920, "height": 1080 },
+    "fps": 30,
+    "duration_sec": 36.0
+  },
+  "settings": {
+    "captions_enabled": true,
+    "show_transitions": true,
+    "narration_volume": 1.0,
+    "music_volume": 0.35,
+    "sfx_volume": 0.5,
+    "background_color": "#000000"
+  },
+  "tracks": {
+    "video": [
+      {
+        "id": "scene-1",
+        "scene_id": "scene-1",
+        "type": "image",
+        "src": "projects/a1b2/.../assets/1.jpg",
+        "start_sec": 0.0,
+        "duration_sec": 12.0,
+        "fit": "cover"
+      },
+      {
+        "id": "scene-2",
+        "scene_id": "scene-2",
+        "type": "image",
+        "src": "projects/a1b2/.../assets/2.jpg",
+        "start_sec": 12.0,
+        "duration_sec": 12.0,
+        "fit": "cover"
+      },
+      {
+        "id": "scene-3",
+        "scene_id": "scene-3",
+        "type": "image",
+        "src": "projects/a1b2/.../assets/3.jpg",
+        "start_sec": 24.0,
+        "duration_sec": 12.0,
+        "fit": "cover"
+      }
+    ],
+    "audio": [
+      {
+        "id": "audio-narration",
+        "type": "narration",
+        "src": "projects/a1b2/.../narration.wav",
+        "start_sec": 0.0,
+        "duration_sec": 36.0,
+        "volume": 1.0
+      }
+    ],
+    "captions": [
+      {
+        "id": "caption-scene-1",
+        "section_id": "scene-1",
+        "text": "Welcome. Today we explore the hidden archives.",
+        "start_sec": 0.0,
+        "duration_sec": 12.0,
+        "style": { "preset": "default", "font_size_px": 18, "alignment": "center", "drop_shadow": true }
+      },
+      {
+        "id": "caption-scene-2",
+        "section_id": "scene-2",
+        "text": "Researchers discovered documents that changed everything.",
+        "start_sec": 12.0,
+        "duration_sec": 12.0
+      },
+      {
+        "id": "caption-scene-3",
+        "section_id": "scene-3",
+        "text": "Thanks for watching.",
+        "start_sec": 24.0,
+        "duration_sec": 12.0
+      }
+    ],
+    "broll": [
+      {
+        "id": "broll-1",
+        "type": "image",
+        "src": "projects/a1b2/.../assets/broll-stamp.jpg",
+        "start_sec": 8.0,
+        "duration_sec": 4.0,
+        "layer": "overlay",
+        "position": { "x_pct": 80, "y_pct": 20, "width_pct": 30 }
+      }
+    ],
+    "text_overlays": [
+      {
+        "id": "txt-chapter-1",
+        "text": "CHAPTER ONE",
+        "start_sec": 1.0,
+        "duration_sec": 4.0,
+        "position": { "x_pct": 50, "y_pct": 15 },
+        "style": { "font_size_px": 28, "font_weight": "700", "color": "#FFFFFF", "alignment": "center" }
+      }
+    ],
+    "music": [
+      {
+        "id": "music-bed",
+        "label": "Ambient documentary bed",
+        "src": "assets/library/music/ambient-documentary.mp3",
+        "start_sec": 0.0,
+        "duration_sec": 36.0,
+        "volume": 0.3,
+        "fade_in_sec": 2.0,
+        "fade_out_sec": 3.0
+      }
+    ],
+    "sfx": [
+      {
+        "id": "sfx-whoosh",
+        "label": "Whoosh",
+        "src": "assets/library/sfx/whoosh.mp3",
+        "start_sec": 11.5,
+        "duration_sec": 0.8,
+        "volume": 0.6
+      }
+    ]
+  },
+  "transitions": [
+    { "id": "tr-1", "after_clip_id": "scene-1", "type": "fade", "duration_sec": 0.4, "enabled": true },
+    { "id": "tr-2", "after_clip_id": "scene-2", "type": "slide", "duration_sec": 0.5, "enabled": true }
+  ]
+}

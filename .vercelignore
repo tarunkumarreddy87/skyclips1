@@ -1,0 +1,26 @@
+# Keep Vercel uploads lean (CLI deploys from repo root)
+node_modules
+**/node_modules
+.pnpm-store
+.next
+**/.next
+.git
+.turbo
+**/dist
+**/.venv
+venv
+__pycache__
+**/__pycache__
+workers
+apps/api
+infrastructure
+docs
+.tmp
+tmp
+*.mp4
+*.mp3
+.env
+.env.local
+.env.*.local
+.cursor
+agent-transcripts

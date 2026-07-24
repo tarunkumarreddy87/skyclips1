@@ -1,0 +1,36 @@
+﻿{
+    "lanes":  {
+                  "music_volume":  0.28,
+                  "music":  1,
+                  "chapter":  25,
+                  "cta":  1,
+                  "broll":  14,
+                  "caption_max_len":  64,
+                  "captions":  114,
+                  "transitions":  8
+              },
+    "audio_inspection":  {
+                             "heard":  "Narration clearly present; continuous low synth drone audible underneath",
+                             "speech_rms":  461.3,
+                             "lowband_rms":  398.9,
+                             "highband_rms":  126.3,
+                             "speech_peak":  3253,
+                             "mix_note":  "Bed energy is strong (lowband \u003e highband in 60s mix window) — audible under narration but slightly hot vs ideal ducking; volume=0.28"
+                         },
+    "ffprobe_duration_sec":  272.97,
+    "render_fixes_during_e2e":  [
+                                    "ASS captions instead of 100+ drawtext (WinError 206)",
+                                    "broll stills encoded only for on-screen duration"
+                                ],
+    "duration_note":  "SHORT OF 7min target: script-first English script was ~757 words (~4.5min TTS). Prompt-first 8min attempt reached 5.2min before free-model underfill; 10min attempt failed on non-English TTS.",
+    "licensing":  "PRE-LAUNCH ITEM (not solved): keeping hanuman-synth-beds-v1 for now. Need real royalty-free/licensed library before launch.",
+    "output":  "d:\\HANUMAN\\scripts\\_e2e_lanes_8min_scriptfirst\\final.mp4",
+    "project_id":  "3d08b39f-f3ad-4c2a-9370-8424f91b80a9",
+    "run_id":  "dc7faecb-a554-4732-869b-572c5a00ae79",
+    "visual_inspection":  {
+                              "captions":  "Lower-third, 1-2 lines, fully on-canvas; no 60% overflow block",
+                              "cta":  "Red Subscribe pill top-right near end (~267s) with sign-off caption",
+                              "chapter":  "Section N titles centered mid-frame",
+                              "broll":  "Real Pexels frames replace base mid-scene (e.g. tower at 6.4s); relevance imperfect for WWII topic"
+                          }
+}

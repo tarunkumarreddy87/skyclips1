@@ -1,0 +1,251 @@
+# HANUMAN local stack — infrastructure + application services.
+# Build context is the monorepo root (parent of this folder).
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql+asyncpg://hanuman:hanuman@postgres:5432/hanuman
+  REDIS_URL: redis://redis:6379/0
+  S3_ENDPOINT: http://minio:9000
+  S3_ACCESS_KEY: minioadmin
+  S3_SECRET_KEY: minioadmin
+  S3_BUCKET: hanuman-artifacts
+  S3_REGION: us-east-1
+  # Browser-facing MinIO host. The internal S3_ENDPOINT (minio:9000) is not
+  # resolvable from the browser, so presigned download URLs must embed a host
+  # the browser can reach (the published port on the host).
+  S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
+  TEMPORAL_HOST: temporal:7233
+  TEMPORAL_NAMESPACE: default
+  TEMPORAL_TASK_QUEUE_ORCHESTRATOR: orchestrator
+  TEMPORAL_TASK_QUEUE_MEDIA: media
+  API_BASE_URL: http://api:8000
+  INTERNAL_API_KEY: dev-internal
+  # Default false — silent stub scripts/TTS look like "completed with nothing".
+  # Set HANUMAN_STUB_MODE=true in .env only for offline CI / offline demos.
+  HANUMAN_STUB_MODE: ${HANUMAN_STUB_MODE:-false}
+  ALLOW_SILENT_TTS_FALLBACK: ${ALLOW_SILENT_TTS_FALLBACK:-false}
+  CORS_ORIGINS: http://localhost:3000
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/free}
+  OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+  PEXELS_API_KEY: ${PEXELS_API_KEY:-}
+  SARVAM_API_KEY: ${SARVAM_API_KEY:-}
+  SARVAM_TTS_MODEL: ${SARVAM_TTS_MODEL:-bulbul:v3}
+  SARVAM_TTS_SPEAKER: ${SARVAM_TTS_SPEAKER:-shubh}
+  SARVAM_TTS_LANGUAGE: ${SARVAM_TTS_LANGUAGE:-en-IN}
+  SARVAM_TTS_OUTPUT_CODEC: ${SARVAM_TTS_OUTPUT_CODEC:-wav}
+  SARVAM_TTS_SAMPLE_RATE: ${SARVAM_TTS_SAMPLE_RATE:-22050}
+  SARVAM_TTS_PACE: ${SARVAM_TTS_PACE:-1.0}
+  SARVAM_TTS_TEMPERATURE: ${SARVAM_TTS_TEMPERATURE:-0.6}
+  # Production: Remotion Lambda via render-service (no local Chromium in Docker).
+  RENDER_ENGINE: ${RENDER_ENGINE:-remotion-lambda}
+  RENDER_FFMPEG_FALLBACK: ${RENDER_FFMPEG_FALLBACK:-false}
+  RENDER_SERVICE_URL: http://render-service:8081
+  RENDER_SERVICE_API_KEY: ${RENDER_SERVICE_API_KEY:-}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+  AWS_REGION: ${AWS_REGION:-us-east-1}
+  REMOTION_FUNCTION_NAME: ${REMOTION_FUNCTION_NAME:-}
+  REMOTION_SERVE_URL: ${REMOTION_SERVE_URL:-}
+  REMOTION_BUCKET_NAME: ${REMOTION_BUCKET_NAME:-}
+  REMOTION_FRAMES_PER_LAMBDA: ${REMOTION_FRAMES_PER_LAMBDA:-120}
+  S3_BUCKET_NAME: hanuman-artifacts
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: hanuman
+      POSTGRES_PASSWORD: hanuman
+      POSTGRES_DB: hanuman
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hanuman -d hanuman"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin &&
+      mc mb --ignore-existing local/hanuman-artifacts &&
+      exit 0
+      "
+
+  temporal:
+    image: temporalio/auto-setup:1.25.2
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_USER: hanuman
+      POSTGRES_PWD: hanuman
+      POSTGRES_SEEDS: postgres
+      DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development.yaml
+    ports:
+      - "7233:7233"
+    volumes:
+      - ./temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
+
+  temporal-ui:
+    image: temporalio/ui:2.31.0
+    depends_on:
+      temporal:
+        condition: service_started
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:3000
+    ports:
+      - "8080:8080"
+
+  migrate:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    environment:
+      <<: *app-env
+    command: ["uv", "run", "alembic", "upgrade", "head"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    build:
+      context: ..
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      <<: *app-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  orchestrator:
+    build:
+      context: ..
+      dockerfile: workers/orchestrator/Dockerfile
+    environment:
+      <<: *app-env
+    depends_on:
+      api:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  media:
+    build:
+      context: ..
+      dockerfile: workers/media/Dockerfile
+    environment:
+      <<: *app-env
+    depends_on:
+      api:
+        condition: service_healthy
+      render-service:
+        condition: service_healthy
+      temporal:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  render-service:
+    build:
+      context: ..
+      dockerfile: render-service/Dockerfile
+    ports:
+      - "8081:8081"
+    environment:
+      <<: *app-env
+      PORT: 8081
+      HOST: 0.0.0.0
+      S3_ENDPOINT: http://minio:9000
+      S3_ACCESS_KEY: minioadmin
+      S3_SECRET_KEY: minioadmin
+      S3_BUCKET_NAME: hanuman-artifacts
+      # Remotion Lambda requires real AWS credentials — set in .env for production.
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      REMOTION_SERVE_URL: ${REMOTION_SERVE_URL:-}
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8081/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      args:
+        API_INTERNAL_URL: http://api:8000
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+        NEXT_PUBLIC_PREVIEW_ENGINE: ${NEXT_PUBLIC_PREVIEW_ENGINE:-remotion}
+    ports:
+      - "3000:3000"
+    environment:
+      # Browser-facing API host (used client-side).
+      NEXT_PUBLIC_API_URL: http://localhost:8000
+      # Server-side rewrite target. Inside Docker, localhost:8000 is the web container
+      # itself — the /api/* rewrite must hit the API service by its Docker hostname.
+      API_INTERNAL_URL: http://api:8000
+      # Remotion Player preview in the editor (timeline / transitions / animations).
+      NEXT_PUBLIC_PREVIEW_ENGINE: ${NEXT_PUBLIC_PREVIEW_ENGINE:-remotion}
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  minio_data:

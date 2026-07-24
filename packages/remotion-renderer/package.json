@@ -1,0 +1,44 @@
+{
+  "name": "@hanuman/remotion-renderer",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    ".": "./src/index.ts",
+    "./preview": "./src/preview.ts",
+    "./lambda/config": "./src/lambda/config.ts",
+    "./lib/types": "./src/lib/types.ts"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.489",
+    "@remotion/cli": "4.0.489",
+    "@remotion/lambda": "4.0.489",
+    "@remotion/media-utils": "4.0.489",
+    "@remotion/renderer": "4.0.489",
+    "@remotion/transitions": "4.0.489",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "remotion": "4.0.489",
+    "zod": "4.3.6",
+    "@hanuman/shared-types": "workspace:*",
+    "tsx": "^4.19.2"
+  },
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts TimelineComposition out/phase1-proof.mp4",
+    "render:proof": "remotion render src/index.ts TimelineComposition out/phase1-proof.mp4 --props=fixtures/phase1-proof.props.json --browser-executable=C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+    "still": "remotion still src/index.ts TimelineComposition out/phase1-still.png --frame=15 --props=fixtures/phase1-proof.props.json",
+    "typecheck": "tsc --noEmit",
+    "bridge:job": "tsx src/bridge/job.ts",
+    "lambda:policies": "remotion lambda policies role && remotion lambda policies user",
+    "lambda:quotas": "remotion lambda quotas",
+    "lambda:estimate": "tsx src/lambda/estimate-cost.ts",
+    "lambda:deploy": "tsx src/lambda/deploy.ts",
+    "lambda:deploy:cli": "remotion lambda functions deploy --memory=3008 --disk=2048 --timeout=300 && remotion lambda sites create src/index.ts --site-name=hanuman-timeline",
+    "lambda:render": "tsx src/lambda/render.ts"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "typescript": "^5.7.2"
+  }
+}

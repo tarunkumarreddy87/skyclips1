@@ -1,0 +1,62 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Next.js
+apps/web/.next/
+apps/web/out/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+infrastructure/docker-compose.override.yml
+infrastructure/aws/deployment-state.json
+
+# Logs
+*.log
+
+# Media proof artifacts (Phase 6); keep folder, ignore binaries
+workers/media/proofs/*.mp4
+workers/media/proofs/*.manifest.json
+
+# Turbo
+.turbo/
+.gstack/
+.vercel
+.env*
+
+# Local agent / IDE scratch
+.cursor/
+.codex-runlogs/
+tmp/
+tmp-*
+*.tmp
+
+# Local media / proof dumps outside proofs policy
+workers/media/proofs/*.png
+workers/media/proofs/*.jpg

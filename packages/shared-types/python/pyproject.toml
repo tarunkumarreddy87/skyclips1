@@ -1,0 +1,15 @@
+[project]
+name = "hanuman-shared-types"
+version = "0.1.0"
+description = "Shared domain types for HANUMAN"
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2.10",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["shared_types"]

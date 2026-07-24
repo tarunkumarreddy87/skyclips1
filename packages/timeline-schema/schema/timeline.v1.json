@@ -1,0 +1,346 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://hanuman.local/schemas/timeline.v1.json",
+  "title": "HANUMAN Timeline Manifest v1",
+  "type": "object",
+  "required": ["version", "metadata", "tracks"],
+  "additionalProperties": false,
+  "properties": {
+    "version": { "type": "string", "const": "1" },
+    "metadata": {
+      "type": "object",
+      "required": ["project_id", "run_id", "format_mode", "resolution", "fps", "duration_sec"],
+      "additionalProperties": false,
+      "properties": {
+        "project_id": { "type": "string", "format": "uuid" },
+        "run_id": { "type": "string", "format": "uuid" },
+        "format_mode": { "type": "string", "enum": ["documentary", "listicle"] },
+        "resolution": {
+          "type": "object",
+          "required": ["width", "height"],
+          "properties": {
+            "width": { "type": "integer", "const": 1920 },
+            "height": { "type": "integer", "const": 1080 }
+          }
+        },
+        "fps": { "type": "integer", "const": 30 },
+        "duration_sec": { "type": "number", "exclusiveMinimum": 0 }
+      }
+    },
+    "tracks": {
+      "type": "object",
+      "required": ["video", "audio", "captions"],
+      "additionalProperties": false,
+      "properties": {
+        "video": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/videoClip" }
+        },
+        "audio": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/audioClip" }
+        },
+        "captions": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/captionClip" }
+        },
+        "broll": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/brollClip" }
+        },
+        "music": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/musicClip" }
+        }
+      }
+    },
+    "transitions": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/transition" }
+    },
+    "overlays": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/overlay" }
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "captions_enabled": { "type": "boolean" },
+        "caption_style": {
+          "type": "string",
+          "description": "Project-level caption burn-in style (preview + Remotion).",
+          "enum": ["bold_static", "karaoke", "boxed_pill"],
+          "default": "bold_static"
+        },
+        "music_volume": { "type": "number", "minimum": 0, "maximum": 1 },
+        "narration_volume": { "type": "number", "minimum": 0, "maximum": 1 },
+        "sfx_volume": { "type": "number", "minimum": 0, "maximum": 1 },
+        "theme_id": {
+          "type": "string",
+          "enum": ["crime", "history", "modern", "minimalist", "standard"]
+        }
+      }
+    }
+  },
+  "definitions": {
+    "animationPreset": {
+      "type": "string",
+      "description": "FFmpeg-implementable element In/Out presets only (ADR 0007).",
+      "enum": [
+        "none",
+        "fade",
+        "float",
+        "zoom_in",
+        "zoom_out",
+        "ken_burns_in",
+        "ken_burns_out",
+        "parallax_pan_in",
+        "parallax_pan_out",
+        "drop",
+        "slide",
+        "wipe",
+        "pop",
+        "bounce",
+        "spin",
+        "slide_bounce"
+      ]
+    },
+    "loopPreset": {
+      "type": "string",
+      "description": "FFmpeg-implementable loop / continuous motion presets.",
+      "enum": ["none", "pulse", "ken_burns", "float", "parallax_pan"]
+    },
+    "parallaxPanParams": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "type": "string",
+          "enum": ["left-right", "right-left", "top-bottom", "bottom-top"],
+          "default": "left-right"
+        },
+        "scale": { "type": "number", "minimum": 1, "maximum": 2, "default": 1.2 },
+        "foreground_speed": { "type": "number", "minimum": 0.1, "maximum": 2, "default": 1 },
+        "background_speed": { "type": "number", "minimum": 0.1, "maximum": 2, "default": 0.45 }
+      }
+    },
+    "elementTransform": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Canvas transform. x/y are percent of frame (0–100), center origin. scale* = 1 is identity. rotation is degrees clockwise.",
+      "properties": {
+        "x": { "type": "number", "minimum": 0, "maximum": 100, "default": 50 },
+        "y": { "type": "number", "minimum": 0, "maximum": 100, "default": 50 },
+        "scaleX": { "type": "number", "exclusiveMinimum": 0, "default": 1 },
+        "scaleY": { "type": "number", "exclusiveMinimum": 0, "default": 1 },
+        "rotation": { "type": "number", "default": 0 },
+        "zIndex": { "type": "integer", "default": 0 }
+      }
+    },
+    "animationEdge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["preset"],
+      "properties": {
+        "preset": { "$ref": "#/definitions/animationPreset" },
+        "duration_sec": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "default": 0.6,
+          "description": "Absolute-timeline duration of the In/Out effect (seconds)."
+        }
+      }
+    },
+    "elementAnimation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "in": { "$ref": "#/definitions/animationEdge" },
+        "out": { "$ref": "#/definitions/animationEdge" },
+        "loop": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["preset"],
+          "properties": {
+            "preset": { "$ref": "#/definitions/loopPreset" },
+            "params": { "$ref": "#/definitions/parallaxPanParams" }
+          }
+        }
+      }
+    },
+    "transitionType": {
+      "type": "string",
+      "description": "Clip-boundary transition. Legacy HANUMAN names + native FFmpeg xfade names (ADR 0007).",
+      "enum": [
+        "cut",
+        "fade",
+        "slide",
+        "zoom",
+        "slide-pan",
+        "film-burn",
+        "glitch",
+        "wipeleft",
+        "wiperight",
+        "wipeup",
+        "wipedown",
+        "slideleft",
+        "slideright",
+        "slideup",
+        "slidedown",
+        "circleopen",
+        "circleclose",
+        "dissolve",
+        "pixelize"
+      ]
+    },
+    "videoClip": {
+      "type": "object",
+      "required": ["id", "scene_id", "type", "src", "start_sec", "duration_sec"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "scene_id": { "type": "string" },
+        "type": { "type": "string", "enum": ["image", "video"] },
+        "src": { "type": "string", "minLength": 1 },
+        "start_sec": { "type": "number", "minimum": 0 },
+        "duration_sec": { "type": "number", "exclusiveMinimum": 0 },
+        "source_start_sec": { "type": "number", "minimum": 0 },
+        "fit": { "type": "string", "enum": ["cover", "contain"] },
+        "muted": { "type": "boolean", "description": "When true, clip media audio is silent (editor mute)." },
+        "transform": { "$ref": "#/definitions/elementTransform" },
+        "animation": { "$ref": "#/definitions/elementAnimation" }
+      }
+    },
+    "brollClip": {
+      "type": "object",
+      "required": ["id", "scene_id", "type", "src", "start_sec", "duration_sec"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "scene_id": { "type": "string" },
+        "type": { "type": "string", "enum": ["image", "video"] },
+        "src": { "type": "string", "minLength": 1 },
+        "start_sec": { "type": "number", "minimum": 0 },
+        "duration_sec": { "type": "number", "exclusiveMinimum": 0 },
+        "source_start_sec": { "type": "number", "minimum": 0 },
+        "fit": { "type": "string", "enum": ["cover", "contain"] },
+        "muted": { "type": "boolean", "description": "When true, clip media audio is silent (editor mute)." },
+        "label": { "type": "string" },
+        "transform": { "$ref": "#/definitions/elementTransform" },
+        "animation": { "$ref": "#/definitions/elementAnimation" }
+      }
+    },
+    "audioClip": {
+      "type": "object",
+      "required": ["id", "type", "src", "start_sec", "duration_sec"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["narration"] },
+        "src": { "type": "string", "minLength": 1 },
+        "start_sec": { "type": "number", "minimum": 0 },
+        "duration_sec": { "type": "number", "exclusiveMinimum": 0 },
+        "source_start_sec": { "type": "number", "minimum": 0 },
+        "volume": { "type": "number", "minimum": 0, "maximum": 1 },
+        "fade_in_sec": { "type": "number", "minimum": 0 },
+        "fade_out_sec": { "type": "number", "minimum": 0 }
+      }
+    },
+    "musicClip": {
+      "type": "object",
+      "required": ["id", "type", "src", "start_sec", "duration_sec"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "const": "music" },
+        "src": { "type": "string", "minLength": 1 },
+        "start_sec": { "type": "number", "minimum": 0 },
+        "duration_sec": { "type": "number", "exclusiveMinimum": 0 },
+        "source_start_sec": { "type": "number", "minimum": 0 },
+        "volume": { "type": "number", "minimum": 0, "maximum": 1 },
+        "fade_in_sec": { "type": "number", "minimum": 0 },
+        "fade_out_sec": { "type": "number", "minimum": 0 },
+        "mood": { "type": "string" },
+        "label": { "type": "string" }
+      }
+    },
+    "captionClip": {
+      "type": "object",
+      "required": ["id", "section_id", "text", "start_sec", "duration_sec"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "section_id": { "type": "string" },
+        "text": { "type": "string" },
+        "start_sec": { "type": "number", "minimum": 0 },
+        "duration_sec": { "type": "number", "exclusiveMinimum": 0 },
+        "transform": { "$ref": "#/definitions/elementTransform" },
+        "animation": { "$ref": "#/definitions/elementAnimation" },
+        "style": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "font_size_px": { "type": "integer", "minimum": 8, "maximum": 120 },
+            "color": { "type": "string" },
+            "font_weight": { "type": "string" },
+            "box_width_pct": { "type": "number", "minimum": 10, "maximum": 100 }
+          }
+        },
+        "words": {
+          "type": "array",
+          "description": "Optional word-level clocks for karaoke / boxed highlight. When omitted, renderers estimate proportionally.",
+          "items": {
+            "type": "object",
+            "required": ["text", "start_sec", "duration_sec"],
+            "additionalProperties": false,
+            "properties": {
+              "text": { "type": "string" },
+              "start_sec": { "type": "number", "minimum": 0 },
+              "duration_sec": { "type": "number", "exclusiveMinimum": 0 }
+            }
+          }
+        }
+      }
+    },
+    "transition": {
+      "type": "object",
+      "required": ["id", "after_clip_id", "type", "duration_sec"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "after_clip_id": { "type": "string" },
+        "type": { "$ref": "#/definitions/transitionType" },
+        "duration_sec": { "type": "number", "exclusiveMinimum": 0 },
+        "enabled": { "type": "boolean" },
+        "sfx_muted": { "type": "boolean" }
+      }
+    },
+    "overlay": {
+      "type": "object",
+      "required": ["id", "type", "start_sec", "duration_sec"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string" },
+        "type": { "type": "string", "enum": ["subscribe_cta", "chapter_title", "freeform_text"] },
+        "text": { "type": "string" },
+        "start_sec": { "type": "number", "minimum": 0 },
+        "duration_sec": { "type": "number", "exclusiveMinimum": 0 },
+        "transform": { "$ref": "#/definitions/elementTransform" },
+        "animation": { "$ref": "#/definitions/elementAnimation" },
+        "style": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "font_size_px": { "type": "integer", "minimum": 8, "maximum": 200 },
+            "color": { "type": "string" },
+            "font_weight": { "type": "string" },
+            "alignment": { "type": "string", "enum": ["left", "center", "right"] },
+            "font_family": { "type": "string" },
+            "box_width_pct": { "type": "number", "minimum": 10, "maximum": 100 }
+          }
+        }
+      }
+    }
+  }
+}

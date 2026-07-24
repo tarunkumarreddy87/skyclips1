@@ -1,0 +1,206 @@
+import type { ThemeId } from "@hanuman/shared-types";
+import type { BackgroundPreset, BrandVoice } from "./types";
+
+export const VIDEO_LANGUAGES = [
+  { id: "en", label: "English", flag: "🇬🇧" },
+  { id: "en-us", label: "English (US)", flag: "🇺🇸" },
+  { id: "en-in", label: "English (India)", flag: "🇮🇳" },
+  { id: "hi", label: "Hindi", flag: "🇮🇳" },
+  { id: "te", label: "Telugu", flag: "🇮🇳" },
+  { id: "ta", label: "Tamil", flag: "🇮🇳" },
+  { id: "kn", label: "Kannada", flag: "🇮🇳" },
+  { id: "ml", label: "Malayalam", flag: "🇮🇳" },
+  { id: "bn", label: "Bengali", flag: "🇮🇳" },
+  { id: "mr", label: "Marathi", flag: "🇮🇳" },
+  { id: "gu", label: "Gujarati", flag: "🇮🇳" },
+  { id: "pa", label: "Punjabi", flag: "🇮🇳" },
+  { id: "or", label: "Odia", flag: "🇮🇳" },
+  { id: "as", label: "Assamese", flag: "🇮🇳" },
+  { id: "ur", label: "Urdu", flag: "🇮🇳" },
+  { id: "sa", label: "Sanskrit", flag: "🇮🇳" },
+  { id: "es", label: "Spanish", flag: "🇪🇸" },
+  { id: "fr", label: "French", flag: "🇫🇷" },
+  { id: "de", label: "German", flag: "🇩🇪" },
+  { id: "pt", label: "Portuguese", flag: "🇧🇷" },
+  { id: "ja", label: "Japanese", flag: "🇯🇵" },
+] as const;
+
+export const BRAND_VOICES: BrandVoice[] = [
+  {
+    id: "eleven-clive",
+    name: "Clive Lewis",
+    description: "Narrative Story",
+    provider: "ElevenLabs",
+    accent: "British",
+    flag: "🇬🇧",
+    gender: "Male",
+    age: "Middle Aged",
+    style: "Narrative Story",
+    previewText: "In the quiet hours before dawn, history waits to be told.",
+    hue: 280,
+  },
+  {
+    id: "eleven-david",
+    name: "David",
+    description: "Serious voice",
+    provider: "ElevenLabs",
+    accent: "American",
+    flag: "🇺🇸",
+    gender: "Male",
+    age: "Middle Aged",
+    style: "Conversational",
+    previewText: "Today we explore the idea that changed everything.",
+    hue: 210,
+  },
+  {
+    id: "eleven-sarah",
+    name: "Sarah",
+    description: "Warm documentary",
+    provider: "ElevenLabs",
+    accent: "American",
+    flag: "🇺🇸",
+    gender: "Female",
+    age: "Young",
+    style: "Narrative Story",
+    previewText: "Every channel has a voice. This one feels like home.",
+    hue: 330,
+  },
+  {
+    id: "eleven-aria",
+    name: "Aria",
+    description: "Soft explanatory",
+    provider: "ElevenLabs",
+    accent: "British",
+    flag: "🇬🇧",
+    gender: "Female",
+    age: "Young",
+    style: "Conversational",
+    previewText: "Let’s break this down into clear, simple pieces.",
+    hue: 170,
+  },
+  {
+    id: "aditya",
+    name: "Aditya",
+    description: "India English — Neutral",
+    provider: "Sarvam",
+    accent: "Indian",
+    flag: "🇮🇳",
+    gender: "Male",
+    age: "Young",
+    style: "Narrative Story",
+    previewText: "From ancient routes to modern grids, the story continues.",
+    hue: 40,
+  },
+  {
+    id: "kavya",
+    name: "Kavya",
+    description: "Hindi — Documentary",
+    provider: "Sarvam",
+    accent: "Indian",
+    flag: "🇮🇳",
+    gender: "Female",
+    age: "Middle Aged",
+    style: "Narrative Story",
+    previewText: "यह कहानी उन लोगों की है जिन्होंने इतिहास बदला।",
+    hue: 15,
+  },
+  {
+    id: "shubh",
+    name: "Shubh",
+    description: "Balanced default",
+    provider: "Sarvam",
+    accent: "Indian",
+    flag: "🇮🇳",
+    gender: "Male",
+    age: "Middle Aged",
+    style: "Conversational",
+    previewText: "Clear narration for long-form documentary and listicle videos.",
+    hue: 200,
+  },
+];
+
+export const BACKGROUND_PRESETS: BackgroundPreset[] = [
+  { id: "bg-waves", label: "Dark waves", swatch: "bg-gradient-to-br from-zinc-900 via-slate-800 to-zinc-950" },
+  { id: "bg-grid", label: "Grid", swatch: "bg-[linear-gradient(rgba(255,255,255,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.06)_1px,transparent_1px)] bg-[size:18px_18px] bg-zinc-900" },
+  { id: "bg-green", label: "Deep green", swatch: "bg-emerald-800" },
+  { id: "bg-sky", label: "Soft sky", swatch: "bg-sky-400" },
+  { id: "bg-cream", label: "Cream", swatch: "bg-amber-50" },
+  { id: "bg-black", label: "Black", swatch: "bg-black" },
+  { id: "bg-red-grid", label: "Red grid", swatch: "bg-[linear-gradient(rgba(220,38,38,0.25)_1px,transparent_1px),linear-gradient(90deg,rgba(220,38,38,0.25)_1px,transparent_1px)] bg-[size:16px_16px] bg-zinc-950" },
+  { id: "bg-paper", label: "Aged paper", swatch: "bg-gradient-to-br from-amber-100 via-stone-200 to-amber-200" },
+  { id: "bg-crimson", label: "Crimson fade", swatch: "bg-gradient-to-b from-red-950 to-zinc-950" },
+];
+
+export const THEME_CARDS: Array<{
+  id: ThemeId;
+  name: string;
+  description: string;
+  thumb: string;
+}> = [
+  {
+    id: "crime",
+    name: "Crime theme",
+    description: "Dark and intense — perfect for true crime, mystery, and investigative content.",
+    thumb: "bg-zinc-950 text-red-400",
+  },
+  {
+    id: "history",
+    name: "History theme",
+    description: "Classic and timeless — ideal for historical documentaries, educational content, and period pieces.",
+    thumb: "bg-amber-100 text-amber-950",
+  },
+  {
+    id: "modern",
+    name: "Modern theme",
+    description: "Sleek and contemporary — clean lines and vibrant colors for tech and lifestyle.",
+    thumb: "bg-zinc-200 text-zinc-900",
+  },
+  {
+    id: "minimalist",
+    name: "Minimalist theme",
+    description: "Clean and simple — ideal for corporate presentations and product showcases.",
+    thumb: "bg-white text-zinc-800",
+  },
+  {
+    id: "standard",
+    name: "Standard theme",
+    description: "Versatile, well-balanced theme with neutral styling. Start here if unsure.",
+    thumb: "bg-zinc-800 text-white",
+  },
+];
+
+export const MOTION_TEMPLATES = [
+  "Youtube Comments Pop",
+  "World Map Image Highlight",
+  "World Map",
+  "Website Screen Shot",
+  "Vertical Bar Chart",
+  "Two Image One Title",
+  "Two Choice Portrait",
+  "Twitter Post",
+  "Travel Map",
+  "Subscribe CTA",
+  "Chapter Title",
+  "Lower Third",
+] as const;
+
+export const TRANSITION_TEMPLATES = [
+  "Hard cut",
+  "Cross dissolve",
+  "Zoom",
+  "Slide pan",
+  "Film burn",
+  "Glitch",
+  "Iris",
+  "Whip pan",
+] as const;
+
+export const DURATION_OPTIONS = [
+  { minutes: 5, label: "5 min" },
+  { minutes: 10, label: "10 min" },
+  { minutes: 15, label: "15 min" },
+  { minutes: 20, label: "20 min" },
+  { minutes: 30, label: "30 min" },
+  { minutes: 45, label: "45 min" },
+  { minutes: 60, label: "60 min" },
+] as const;
