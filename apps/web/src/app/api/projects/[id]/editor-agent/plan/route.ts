@@ -2,7 +2,8 @@ import { withRequestDeadline } from "@/lib/http/request-deadline";
 import { serverApiBaseUrl } from "@/lib/api-base-url";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 480;
+// Vercel Hobby limits Serverless Functions to a maximum duration of 300 seconds.
+export const maxDuration = 300;
 
 /** The generic rewrite has a 30s socket timeout; AI planning needs a bounded longer request. */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
