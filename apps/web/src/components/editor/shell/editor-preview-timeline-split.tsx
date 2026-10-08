@@ -37,6 +37,7 @@ export function EditorPreviewTimelineSplit({
   timeline: React.ReactNode;
 }) {
   const shellRef = useRef<HTMLDivElement>(null);
+  const dragCleanupRef = useRef<(() => void) | null>(null);
   const latestFracRef = useRef(DEFAULT_PREVIEW_FRAC);
   const [previewFrac, setPreviewFrac] = useState(DEFAULT_PREVIEW_FRAC);
   const [dragging, setDragging] = useState(false);
@@ -46,10 +47,12 @@ export function EditorPreviewTimelineSplit({
     const initial = readStoredFrac();
     latestFracRef.current = initial;
     setPreviewFrac(initial);
+    return () => dragCleanupRef.current?.();
   }, []);
 
   const onPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
+    dragCleanupRef.current?.();
     const shell = shellRef.current;
     if (!shell) return;
     const startY = e.clientY;
@@ -73,19 +76,24 @@ export function EditorPreviewTimelineSplit({
 
     const onUp = () => {
       setDragging(false);
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
+      removeListeners();
       try {
         window.localStorage.setItem(STORAGE_KEY, String(latestFracRef.current));
       } catch {
         /* ignore */
       }
     };
+    const removeListeners = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+      if (dragCleanupRef.current === removeListeners) dragCleanupRef.current = null;
+    };
 
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
     window.addEventListener("pointercancel", onUp);
+    dragCleanupRef.current = removeListeners;
   }, []);
 
   return (

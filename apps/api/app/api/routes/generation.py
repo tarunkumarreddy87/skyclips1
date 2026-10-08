@@ -125,10 +125,11 @@ async def reset_timeline(
 @router.get("/projects/{project_id}/video", response_model=ArtifactResponse)
 async def download_video(
     project_id: uuid.UUID,
+    run_id: uuid.UUID | None = Query(default=None, alias="runId"),
     user: User = Depends(get_current_user),
     service: GenerationService = Depends(get_generation_service),
 ) -> ArtifactResponse:
-    return await service.get_final_video(user, project_id)
+    return await service.get_final_video(user, project_id, run_id=run_id)
 
 
 @router.get("/projects/{project_id}/progress/events", response_model=list[ProgressEventResponse])
@@ -147,6 +148,8 @@ async def stream_progress(
     user: User = Depends(get_current_user),
     service: ProgressService = Depends(get_progress_service),
 ):
+    # Authorise before the response starts: once streaming, a 404 can't be sent.
+    await service.verify_project_access(user, project_id)
     return StreamingResponse(
         service.stream_events(user, project_id),
         media_type="text/event-stream",

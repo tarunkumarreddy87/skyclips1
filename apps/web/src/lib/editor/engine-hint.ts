@@ -1,6 +1,6 @@
 /**
- * Client hint for Remotion-only exports (matches workers/media engine_select).
- * Product path always uses Remotion — this flags motion-rich timelines for copy.
+ * Client hint for native engine-only exports (matches workers/media engine_select).
+ * Product path always uses native engine — this flags motion-rich timelines for copy.
  */
 
 import type { Timeline } from "./types";
@@ -22,8 +22,8 @@ function animationActive(item: {
   return Boolean(loop && loop !== "none");
 }
 
-/** True when the timeline has transitions/overlays/motion (Remotion shines here). */
-export function timelineNeedsRemotion(timeline: Timeline): boolean {
+/** True when the timeline has transitions/overlays/motion (native engine shines here). */
+export function timelineNeedsMotionGraphics(timeline: Timeline): boolean {
   if (timeline.settings.showTransitions) {
     for (const t of timeline.transitions) {
       if (t.enabled === false) continue;

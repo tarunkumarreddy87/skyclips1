@@ -9,7 +9,11 @@ from sqlalchemy.orm import selectinload
 from app.db.models import FormatMode, Project, ProjectStatus, Quote, QuoteStatus, User
 from app.schemas.common import to_iso
 from app.schemas.quote import QuoteResponse, QuoteSectionOutline, UpdateQuoteRequest
-from app.services.quote_inference import _content_density_warning, infer_quote
+from app.services.quote_inference import (
+    _content_density_warning,
+    _credit_estimate,
+    infer_quote,
+)
 
 
 class QuoteService:
@@ -17,7 +21,7 @@ class QuoteService:
         self.session = session
 
     async def generate_quote(self, user: User, project_id: uuid.UUID) -> QuoteResponse:
-        project = await self._get_project_for_quote(user, project_id)
+        project = await self._get_project_for_quote(user, project_id, for_update=True)
 
         if project.status not in (ProjectStatus.DRAFT, ProjectStatus.QUOTED):
             raise HTTPException(
@@ -67,7 +71,7 @@ class QuoteService:
     async def update_active_quote(
         self, user: User, project_id: uuid.UUID, payload: UpdateQuoteRequest
     ) -> QuoteResponse:
-        project = await self._get_project_for_quote(user, project_id)
+        project = await self._get_project_for_quote(user, project_id, for_update=True)
 
         if project.status != ProjectStatus.QUOTED:
             raise HTTPException(
@@ -82,37 +86,63 @@ class QuoteService:
                 detail="Only pending quotes can be edited",
             )
 
-        if payload.format_mode is not None:
-            quote.format_mode = FormatMode(payload.format_mode)
-            project.format_mode = quote.format_mode
-        if payload.duration_sec is not None:
-            quote.duration_sec = payload.duration_sec
-            quote.credit_estimate = max(24, (payload.duration_sec // 60) * 24)
-            if project.brief is not None:
-                project.brief.target_duration_sec = payload.duration_sec
-        if payload.language is not None:
-            quote.language = payload.language
-            if project.brief is not None:
-                project.brief.language = payload.language
-        if payload.voice_id is not None:
-            quote.voice_id = payload.voice_id
-        if payload.model_id is not None:
-            quote.model_id = payload.model_id
-            if project.brief is not None:
-                project.brief.model_id = payload.model_id
-        if payload.brand_profile_id is not None:
-            quote.brand_profile_id = payload.brand_profile_id
-            if project.brief is not None:
-                project.brief.brand_profile_id = payload.brand_profile_id
-        if payload.section_outline is not None:
-            quote.section_outline = [s.model_dump() for s in payload.section_outline]
+        # An edit creates a new immutable quote revision. Approval carries the id
+        # the user reviewed, so an update racing approval can never change the
+        # amount/language after consent.
+        format_mode = FormatMode(payload.format_mode) if payload.format_mode is not None else quote.format_mode
+        duration_sec = payload.duration_sec if payload.duration_sec is not None else quote.duration_sec
+        language = payload.language if payload.language is not None else quote.language
+        voice_id = payload.voice_id if payload.voice_id is not None else quote.voice_id
+        model_id = payload.model_id if payload.model_id is not None else quote.model_id
+        brand_profile_id = (
+            payload.brand_profile_id
+            if payload.brand_profile_id is not None
+            else quote.brand_profile_id
+        )
+        section_outline = (
+            [section.model_dump() for section in payload.section_outline]
+            if payload.section_outline is not None
+            else list(quote.section_outline or [])
+        )
 
+        project.format_mode = format_mode
+        if project.brief is not None:
+            project.brief.target_duration_sec = duration_sec
+            project.brief.language = language
+            project.brief.model_id = model_id
+            project.brief.brand_profile_id = brand_profile_id
+
+        next_version = await self._next_quote_version(project.id)
+        await self._supersede_active_quotes(project.id)
+        revised = Quote(
+            project_id=project.id,
+            version=next_version,
+            is_active=True,
+            format_mode=format_mode,
+            duration_sec=duration_sec,
+            language=language,
+            voice_id=voice_id,
+            model_id=model_id,
+            brand_profile_id=brand_profile_id,
+            section_outline=section_outline,
+            credit_estimate=_credit_estimate(duration_sec),
+            resolution=quote.resolution,
+            aspect_ratio=quote.aspect_ratio,
+            status=QuoteStatus.PENDING_APPROVAL,
+        )
+        self.session.add(revised)
         await self.session.commit()
-        await self.session.refresh(quote)
-        return self._to_response(quote, project)
+        await self.session.refresh(revised)
+        return self._to_response(revised, project)
 
-    async def approve_quote(self, user: User, project_id: uuid.UUID) -> QuoteResponse:
-        project = await self._get_project_for_quote(user, project_id)
+    async def approve_quote(
+        self,
+        user: User,
+        project_id: uuid.UUID,
+        *,
+        expected_quote_id: uuid.UUID | None,
+    ) -> QuoteResponse:
+        project = await self._get_project_for_quote(user, project_id, for_update=True)
 
         if project.status != ProjectStatus.QUOTED:
             raise HTTPException(
@@ -121,6 +151,11 @@ class QuoteService:
             )
 
         quote = await self._get_active_quote(project_id)
+        if expected_quote_id is None or quote.id != expected_quote_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Quote changed since it was reviewed. Review the latest quote before approving.",
+            )
         if quote.status != QuoteStatus.PENDING_APPROVAL:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -141,12 +176,16 @@ class QuoteService:
         quote = await self._get_active_quote(project_id)
         return self._to_response(quote, project)
 
-    async def _get_project_for_quote(self, user: User, project_id: uuid.UUID) -> Project:
+    async def _get_project_for_quote(
+        self, user: User, project_id: uuid.UUID, *, for_update: bool = False
+    ) -> Project:
         stmt = (
             select(Project)
             .options(selectinload(Project.brief))
             .where(Project.id == project_id, Project.user_id == user.id)
         )
+        if for_update:
+            stmt = stmt.with_for_update(of=Project)
         result = await self.session.execute(stmt)
         project = result.scalar_one_or_none()
         if project is None:
@@ -154,9 +193,13 @@ class QuoteService:
         return project
 
     async def _get_active_quote(self, project_id: uuid.UUID) -> Quote:
-        stmt = select(Quote).where(Quote.project_id == project_id, Quote.is_active.is_(True))
-        result = await self.session.execute(stmt)
-        quote = result.scalar_one_or_none()
+        stmt = (
+            select(Quote)
+            .where(Quote.project_id == project_id, Quote.is_active.is_(True))
+            .order_by(Quote.version.desc())
+            .limit(1)
+        )
+        quote = (await self.session.execute(stmt)).scalars().first()
         if quote is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No active quote found")
         return quote

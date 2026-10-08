@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowUp, ChevronDown, Plus } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
+import { BorderBeam } from "@/components/ui/border-beam";
 import { cn } from "@/lib/utils";
 
 const PLACEHOLDERS = [
@@ -69,6 +70,7 @@ export function LandingPromptBox({
           focused && "border-[#2f6bff]/50 shadow-[0_0_0_1px_rgba(47,107,255,0.25),0_24px_80px_-36px_rgba(47,107,255,0.35)]",
         )}
       >
+        <BorderBeam size={240} duration={9} colorVariant="colorful" borderWidth={1.5} />
         <div className={cn("px-4 pt-4 sm:px-5", compact ? "pb-2" : "pb-1")}>
           {tags?.length ? (
             <p className="mb-3 text-[15px] leading-relaxed text-white/85">

@@ -1,6 +1,10 @@
-import type { CSSProperties } from "react";
 import type { TimelineItem, TransitionItem } from "@/lib/editor/types";
-import { clipsAbut } from "@/lib/editor/transition-abut";
+import { clipsAbut } from "./transition-abut";
+import type { CSSProperties } from "react";
+
+export interface DualClipLayerStyles { from: CSSProperties; to: CSSProperties }
+export const dualClipTransitionStyles = dualClipScrubStyles;
+export function transitionOverlayStyle(type: string, progress: number): CSSProperties { return transitionScrubStyle(type, progress).overlay; }
 
 export interface ActiveTransitionScrub {
   type: string;
@@ -10,7 +14,7 @@ export interface ActiveTransitionScrub {
   toItemId: string | null;
 }
 
-/** Find an enabled transition whose Remotion blend window contains the playhead. */
+/** Find an enabled transition whose native engine blend window contains the playhead. */
 export function findActiveTransitionScrub(
   playheadMs: number,
   transitions: TransitionItem[],
@@ -45,13 +49,7 @@ export function findActiveTransitionScrub(
   }
   return null;
 }
-
-export interface DualClipLayerStyles {
-  from: CSSProperties;
-  to: CSSProperties;
-}
-
-/** Layer styles for outgoing/incoming clips during scrub (approximate Remotion). */
+/** Layer styles for outgoing/incoming clips during scrub (approximate native engine). */
 export function dualClipScrubStyles(type: string, progress: number): DualClipLayerStyles {
   const p = Math.max(0, Math.min(1, progress));
   const key = type.toLowerCase();
@@ -125,7 +123,7 @@ export function dualClipScrubStyles(type: string, progress: number): DualClipLay
   };
 }
 
-/** Lightweight CSS overlay mimicking Remotion effects while scrubbing. */
+/** Lightweight CSS overlay mimicking native engine effects while scrubbing. */
 export function transitionScrubStyle(
   type: string,
   progress: number,

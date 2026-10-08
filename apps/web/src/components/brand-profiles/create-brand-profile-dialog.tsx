@@ -40,7 +40,7 @@ export function CreateBrandProfileDialog({ open, onOpenChange }: CreateBrandProf
     setSubmitting(true);
     try {
       const profile = createProfile(name);
-      toast.success("Brand profile created", {
+      toast.success("Channel profile created", {
         description: "Set voice, theme, and compliance next.",
       });
       onOpenChange(false);
@@ -76,7 +76,7 @@ export function CreateBrandProfileDialog({ open, onOpenChange }: CreateBrandProf
           >
             <div className="flex items-center justify-between border-b border-white/8 px-5 py-4">
               <h2 id="create-bp-title" className="text-base font-semibold tracking-tight">
-                Create new brand profile
+                Create new channel profile
               </h2>
               <button
                 type="button"
@@ -90,11 +90,11 @@ export function CreateBrandProfileDialog({ open, onOpenChange }: CreateBrandProf
 
             <div className="space-y-5 px-5 py-5">
               <p className="text-sm text-zinc-400">
-                To create a new brand profile, first enter a profile name.
+                Name your channel to get started.
               </p>
               <div className="space-y-2">
                 <Label htmlFor="bp-name" className="text-xs font-medium text-zinc-400">
-                  Brand profile&apos;s name
+                  Channel profile name
                 </Label>
                 <Input
                   id="bp-name"

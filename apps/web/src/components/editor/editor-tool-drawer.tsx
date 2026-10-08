@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
 import { useEditorStore } from "@/lib/editor/store";
 import { EDITOR_TOOLS } from "@/lib/editor/tools";
@@ -11,6 +12,7 @@ import { TransitionsPanel } from "./panels/transitions-panel";
 import { TemplatesPanel } from "./panels/templates-panel";
 import { FilesPanel } from "./panels/files-panel";
 import { HistoryPanel } from "./panels/history-panel";
+import { EffectsPanel } from "./panels/effects-panel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -20,7 +22,14 @@ export function EditorToolDrawer() {
   const open = useEditorStore((s) => s.ui.toolPanelOpen);
   const activeTool = useEditorStore((s) => s.ui.activeTool);
   const toggleToolPanel = useEditorStore((s) => s.toggleToolPanel);
-  const label = EDITOR_TOOLS.find((t) => t.id === activeTool)?.label ?? "Tools";
+  const contentRef = useRef<HTMLDivElement>(null);
+  const label = activeTool === "text"
+    ? "Appearance"
+    : EDITOR_TOOLS.find((t) => t.id === activeTool)?.label ?? "Tools";
+
+  useEffect(() => {
+    if (open) contentRef.current?.scrollTo({ top: 0 });
+  }, [activeTool, open]);
 
   return (
     <>
@@ -28,7 +37,7 @@ export function EditorToolDrawer() {
         <button
           type="button"
           aria-label="Close tools panel"
-          className="absolute inset-0 z-30 bg-black/45 backdrop-blur-[1px] transition-opacity duration-280"
+          className="absolute inset-0 z-30 bg-black/45 backdrop-blur-[1px] transition-opacity duration-280 md:hidden"
           onClick={() => toggleToolPanel(false)}
         />
       )}
@@ -63,13 +72,14 @@ export function EditorToolDrawer() {
                   <X className="size-3.5" />
                 </Button>
               </div>
-              <div className="editor-scroll min-h-0 flex-1 overflow-y-auto">
+              <div ref={contentRef} className="editor-scroll min-h-0 flex-1 overflow-y-auto">
                 {activeTool === "media" && <MediaBrowser />}
                 {activeTool === "text" && <TextToolPanel />}
                 {activeTool === "audio" && <AudioToolPanel />}
                 {activeTool === "templates" && <TemplatesPanel />}
                 {activeTool === "files" && <FilesPanel />}
                 {activeTool === "history" && <HistoryPanel />}
+                {activeTool === "effects" && <EffectsPanel />}
               </div>
             </>
           )}

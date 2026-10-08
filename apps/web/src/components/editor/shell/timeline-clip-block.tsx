@@ -5,11 +5,10 @@ import {
   Eye,
   EyeOff,
   ImageIcon,
-  Check,
   Play,
   Sparkles,
   Type,
-  UnfoldHorizontal,
+  Shuffle,
   Volume2,
 } from "lucide-react";
 import type { TimelineItem, TransitionItem } from "@/lib/editor/types";
@@ -19,8 +18,9 @@ import {
   findOverlappingClipIds,
   proposedRangeForMove,
 } from "@/lib/editor/clip-collision";
-import { formatTimecode, msToPx, pxToMs } from "@/lib/editor/utils";
-import { resolveMediaUrl } from "@/lib/editor/media-url";
+import { msToPx, pxToMs } from "@/lib/editor/utils";
+import { resolveMediaUrl, resolveMediaUrlOrFallback } from "@/lib/editor/media-url";
+import { prefetchMediaImage } from "@/lib/http/media-request-cache";
 import { cn } from "@/lib/utils";
 
 export type ClipVisualVariant =
@@ -94,56 +94,216 @@ function TrimCapGrip({ side, tone }: { side: "left" | "right"; tone: string }) {
   );
 }
 
-/** Speech-like envelope + seeded detail (until decoded peaks ship). */
-function seededWaveHeights(seed: string, count: number): number[] {
-  let h = 2166136261;
-  for (let i = 0; i < seed.length; i++) {
-    h ^= seed.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  const out: number[] = [];
-  for (let i = 0; i < count; i++) {
-    h = Math.imul(h ^ (h >>> 13), 1274126177) >>> 0;
-    const t = i / Math.max(1, count - 1);
-    // Phrase envelope: quiet edges, louder mid — reads as narration not noise.
-    const envelope = 0.35 + 0.65 * Math.sin(Math.PI * t);
-    const chatter = 0.55 + 0.45 * ((h % 1000) / 1000);
-    const spike = h % 17 === 0 ? 1.35 : 1;
-    out.push(Math.max(2, Math.round(16 * envelope * chatter * spike)));
-  }
-  return out;
+interface WaveformData {
+  peaks: number[];
+  durationMs: number;
 }
 
-function AudioWaveform({ seed, widthPx }: { seed: string; widthPx: number }) {
-  const count = Math.max(12, Math.min(100, Math.floor(widthPx / 2.5)));
-  const heights = useMemo(() => seededWaveHeights(seed, count), [seed, count]);
+const waveformCache = new Map<string, WaveformData>();
+const waveformPending = new Map<string, Promise<WaveformData | null>>();
+
+async function loadWaveformData(src: string): Promise<WaveformData | null> {
+  const cached = waveformCache.get(src);
+  if (cached) return cached;
+
+  const pending = waveformPending.get(src);
+  if (pending) return pending;
+
+  const promise = (async () => {
+    try {
+      const resp = await fetch(src, { mode: "cors" });
+      if (!resp.ok) return null;
+      const buffer = await resp.arrayBuffer();
+      let audio: AudioBuffer;
+
+      // Prefer OfflineAudioContext to decode audio without holding system audio channels
+      if (typeof OfflineAudioContext !== "undefined") {
+        try {
+          const offlineCtx = new OfflineAudioContext(1, 1, 44100);
+          audio = await offlineCtx.decodeAudioData(buffer.slice(0));
+        } catch {
+          audio = await decodeWithAudioContext(buffer);
+        }
+      } else if (typeof window !== "undefined") {
+        const AudioCtx =
+          window.AudioContext ||
+          (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+        if (!AudioCtx) return null;
+        audio = await decodeWithAudioContext(buffer);
+      } else {
+        return null;
+      }
+
+      // Fast strided peak downsampling (up to 2048 peaks max)
+      const PEAKS_COUNT = 2048;
+      const peaks = new Float32Array(PEAKS_COUNT);
+      const totalChannels = audio.numberOfChannels;
+
+      for (let c = 0; c < totalChannels; c++) {
+        const samples = audio.getChannelData(c);
+        const len = samples.length;
+        const bucketSize = Math.max(1, Math.ceil(len / PEAKS_COUNT));
+        const sampleStep = Math.max(1, Math.floor(bucketSize / 32));
+
+        for (let b = 0; b < PEAKS_COUNT; b++) {
+          const start = Math.floor(b * len / PEAKS_COUNT);
+          const end = Math.min(Math.max(start + 1, Math.floor((b + 1) * len / PEAKS_COUNT)), len);
+          let max = 0;
+          for (let j = start; j < end; j += sampleStep) {
+            const val = Math.abs(samples[j]);
+            if (val > max) max = val;
+          }
+          if (max > peaks[b]) {
+            peaks[b] = max;
+          }
+        }
+      }
+
+      const result: WaveformData = {
+        peaks: Array.from(peaks),
+        durationMs: audio.duration * 1000,
+      };
+
+      waveformCache.set(src, result);
+      return result;
+    } catch {
+      return null;
+    } finally {
+      waveformPending.delete(src);
+    }
+  })();
+
+  waveformPending.set(src, promise);
+  return promise;
+}
+
+async function decodeWithAudioContext(buffer: ArrayBuffer): Promise<AudioBuffer> {
+  if (typeof window === "undefined") throw new Error("AudioContext unavailable");
+  const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+  if (!AudioCtx) throw new Error("AudioContext unavailable");
+  const ctx = new AudioCtx();
+  try {
+    return await ctx.decodeAudioData(buffer.slice(0));
+  } finally {
+    if (ctx.state !== "closed") {
+      try { await ctx.close(); } catch { /* browser may close asynchronously */ }
+    }
+  }
+}
+
+function AudioWaveform({
+  widthPx,
+  src,
+  sourceStartMs,
+  durationMs,
+}: {
+  widthPx: number;
+  src?: string;
+  sourceStartMs: number;
+  durationMs: number;
+}) {
+  const count = Math.max(12, Math.min(2048, Math.floor(widthPx / 3)));
+  const [decoded, setDecoded] = useState<WaveformData | null>(() =>
+    src ? waveformCache.get(src) ?? null : null,
+  );
+  const [loading, setLoading] = useState(() => Boolean(src && !waveformCache.has(src)));
+
+  useEffect(() => {
+    if (!src || typeof window === "undefined") {
+      setDecoded(null);
+      setLoading(false);
+      return;
+    }
+
+    const cached = waveformCache.get(src);
+    if (cached) {
+      setDecoded(cached);
+      setLoading(false);
+      return;
+    }
+
+    setDecoded(null);
+    setLoading(true);
+
+    let active = true;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const load = async (attempt: number) => {
+      const data = await loadWaveformData(src);
+      if (!active) return;
+      if (!data && attempt < 2) {
+        retryTimer = setTimeout(() => void load(attempt + 1), 1000 * (attempt + 1));
+        return;
+      }
+      setDecoded(data);
+      setLoading(false);
+    };
+    void load(0);
+
+    return () => {
+      // The shared fetch must survive virtualization and React effect remounts.
+      active = false;
+      clearTimeout(retryTimer);
+    };
+  }, [src]);
+
+  // Fast memoized bar heights
+  const heights = useMemo(() => {
+    if (!decoded || !decoded.peaks.length || decoded.durationMs <= 0) return null;
+    const peakLen = decoded.peaks.length;
+    const result = new Float32Array(count);
+
+    for (let i = 0; i < count; i++) {
+      const from = Math.floor(
+        ((sourceStartMs + (i * durationMs) / count) / decoded.durationMs) * peakLen,
+      );
+      const to = Math.ceil(
+        ((sourceStartMs + ((i + 1) * durationMs) / count) / decoded.durationMs) * peakLen,
+      );
+      let peak = 0;
+      const startIdx = Math.max(0, from);
+      const endIdx = Math.min(peakLen, Math.max(startIdx + 1, to));
+      for (let j = startIdx; j < endIdx; j++) {
+        if (decoded.peaks[j] > peak) peak = decoded.peaks[j];
+      }
+      result[i] = peak * 20;
+    }
+    return result;
+  }, [count, decoded, sourceStartMs, durationMs]);
+
   return (
-    <span className="pointer-events-none absolute inset-x-1 inset-y-0 flex items-center gap-[1px] overflow-hidden opacity-90">
-      {heights.map((h, i) => (
-        <span
-          key={i}
-          className="w-[2px] shrink-0 rounded-full bg-white/75"
-          style={{ height: `${Math.max(4, Math.min(h + 2, 18))}px` }}
-        />
-      ))}
+    <span
+      data-waveform-state={heights ? "ready" : loading ? "loading" : "unavailable"}
+      className={cn(
+        "pointer-events-none absolute inset-x-1 inset-y-0 flex items-center gap-[1px] overflow-hidden",
+        loading ? "opacity-45" : "opacity-90",
+      )}
+    >
+      {heights ? Array.from(heights).map((h, i) => (
+            <span
+              key={i}
+              className="min-w-0 flex-1 rounded-sm bg-white/75"
+              style={{ height: `${Math.max(1, Math.min(h, 20))}px` }}
+            />
+          )) : <span className="sticky left-2 truncate px-2 text-[10px] text-white/80">{loading ? "Loading waveform…" : "Waveform unavailable"}</span>}
     </span>
   );
 }
 
-/** Continuous filmstrip across the clip width — one media element, viewport-gated. */
+/** Continuous filmstrip across the clip width — posters/sprites only (no MP4). */
 function Filmstrip({
   thumbUrl,
   heightPx,
-  preferVideo = false,
+  onLoadError,
 }: {
   thumbUrl: string;
   widthPx: number;
   heightPx: number;
+  onLoadError: () => void;
+  /** @deprecated Ignored — MP4 filmstrips are banned. */
   preferVideo?: boolean;
 }) {
   const hostRef = useRef<HTMLSpanElement>(null);
   const [visible, setVisible] = useState(false);
-  const isVideo = preferVideo || /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(thumbUrl);
 
   useEffect(() => {
     const el = hostRef.current;
@@ -152,7 +312,7 @@ function Filmstrip({
     const io = new IntersectionObserver(
       ([entry]) => {
         // Release decoders for clips that leave the timeline viewport instead of
-        // keeping every seen video filmstrip mounted for the whole session.
+        // keeping every seen filmstrip mounted for the whole session.
         setVisible(Boolean(entry?.isIntersecting));
       },
       { root: scrollRoot, rootMargin: "160px 240px", threshold: 0.01 },
@@ -160,6 +320,19 @@ function Filmstrip({
     io.observe(el);
     return () => io.disconnect();
   }, []);
+
+  // CSS backgrounds do not emit useful React image errors. Preflight through the
+  // shared request cache so an expired poster does not remain blank forever.
+  useEffect(() => {
+    if (!visible || !thumbUrl) return;
+    let cancelled = false;
+    void prefetchMediaImage(thumbUrl).catch(() => {
+      if (!cancelled) onLoadError();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, thumbUrl, onLoadError]);
 
   // Keep one stable observer host; only the media child changes as the clip
   // enters/leaves the actual horizontal timeline viewport.
@@ -169,23 +342,7 @@ function Filmstrip({
       className="pointer-events-none absolute inset-0 overflow-hidden bg-black/25"
       aria-hidden
     >
-      {visible && isVideo ? (
-        <video
-          src={thumbUrl}
-          muted
-          playsInline
-          preload="metadata"
-          className="size-full object-cover opacity-90"
-          onLoadedData={(e) => {
-            try {
-              const v = e.currentTarget;
-              if (v.readyState >= 2 && v.currentTime < 0.05) v.currentTime = 0.08;
-            } catch {
-              /* ignore */
-            }
-          }}
-        />
-      ) : visible ? (
+      {visible ? (
         <span
           className="absolute inset-0"
           style={{
@@ -208,13 +365,18 @@ interface TimelineClipBlockProps {
   zoom: number;
   trackHeight: number;
   selected: boolean;
+  /** A grouped timeline representation; selectable but not movable or trimmable. */
+  presentationOnly?: boolean;
+  captionSegments?: TimelineItem[];
   transition?: TransitionItem | null;
   showBoundary?: boolean;
   transitionSelected?: boolean;
-  onSelect: () => void;
-  onSelectTransition?: () => void;
-  onSeekToStart?: () => void;
+  /** Stable parent callbacks keyed by item id — avoids per-frame identity churn. */
+  onSelect: (itemId: string) => void;
+  onSelectTransition?: (afterItemId: string, hasNext: boolean) => void;
   onOpenInspector?: () => void;
+  /** Whether the next video clip abuts this one (transition seam). */
+  hasNextAbut?: boolean;
 }
 
 function TimelineClipBlockInner({
@@ -222,13 +384,15 @@ function TimelineClipBlockInner({
   zoom,
   trackHeight,
   selected,
+  presentationOnly = false,
+  captionSegments,
   transition,
   showBoundary = false,
   transitionSelected = false,
   onSelect,
   onSelectTransition,
-  onSeekToStart,
   onOpenInspector,
+  hasNextAbut = false,
 }: TimelineClipBlockProps) {
   // Intentionally NOT subscribed to playheadMs — that re-rendered every clip ~30fps.
   const durationMs = useEditorStore((s) => s.timeline.durationMs);
@@ -238,14 +402,14 @@ function TimelineClipBlockInner({
   const toggleItemHidden = useEditorStore((s) => s.toggleItemHidden);
   const toggleAgentPanel = useEditorStore((s) => s.toggleAgentPanel);
   const addAgentMentions = useEditorStore((s) => s.addAgentMentions);
-  const agentBusy = useEditorStore((s) => s.ui.agentBusy);
-  const agentMentionIds = useEditorStore((s) => s.ui.agentMentionIds);
+  const agentMentioned = useEditorStore((s) => s.ui.agentMentionIds.includes(item.id));
+  const showAgentMention = agentMentioned && !presentationOnly;
   const getAsset = useEditorStore((s) => s.getAsset);
   const [clipHovered, setClipHovered] = useState(false);
 
   const [thumbFailed, setThumbFailed] = useState(false);
+  const handleThumbLoadError = useCallback(() => setThumbFailed(true), []);
   const [collision, setCollision] = useState(false);
-  const agentMentioned = agentMentionIds.includes(item.id);
   const dragRef = useRef<{
     mode: "move" | "trim-start" | "trim-end";
     startX: number;
@@ -263,22 +427,21 @@ function TimelineClipBlockInner({
   const isAudio = variant === "narration" || variant === "music" || variant === "sfx";
   const isClip = variant === "video" || variant === "image" || variant === "generated";
   const isTextish = variant === "text" || variant === "caption";
-  const rawThumb =
+  // Filmstrips: posters / sprites / image thumbs only — never pull full MP4.
+  const posterOrSprite =
+    asset?.metadata?.posterUrl ||
     ("thumbnailUrl" in item && item.thumbnailUrl) ||
     asset?.thumbnailUrl ||
+    asset?.metadata?.spriteUrl ||
     (asset?.mediaType === "image" ? asset.url : "") ||
     "";
-  // Prefer image thumbs. Only fall back to the playable media URL for *visible*
-  // video clips with no poster — Filmstrip is IntersectionObserver-gated and uses
-  // preload=metadata so we don't pull every MP4 on timeline open.
-  const thumb = resolveMediaUrl(String(rawThumb || "")) || undefined;
-  const videoFallback =
-    !thumb && isClip && asset?.mediaType === "video"
-      ? resolveMediaUrl(asset.url) || undefined
-      : undefined;
-  const filmstripSrc = thumb || videoFallback;
-  const filmstripIsVideo = Boolean(videoFallback) && !thumb;
-
+  const rawThumb = String(posterOrSprite || "");
+  const thumbCandidate = resolveMediaUrl(rawThumb) || undefined;
+  const looksLikeVideo =
+    Boolean(thumbCandidate) && /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(thumbCandidate!);
+  const thumb = looksLikeVideo ? undefined : thumbCandidate;
+  const filmstripSrc = thumb;
+  useEffect(() => setThumbFailed(false), [filmstripSrc]);
   const left = msToPx(item.startMs, zoom);
   const width = Math.max(msToPx(item.endMs - item.startMs, zoom), isTextish ? 20 : 24);
   const showFilmstrip = isClip && Boolean(filmstripSrc) && !thumbFailed && width > 36;
@@ -288,7 +451,11 @@ function TimelineClipBlockInner({
   const displayLabel =
     (item.type === "captions" || item.type === "text") && "text" in item && item.text
       ? item.text
-      : item.label;
+      : item.type === "animation" && "title" in item && item.title
+        ? item.title
+        : item.type === "animation" && "preset" in item && item.preset
+          ? item.label || String(item.preset).replace(/-/g, " ")
+          : item.label;
 
   const thresholdMs = snapThresholdMs(zoom);
 
@@ -449,47 +616,60 @@ function TimelineClipBlockInner({
       >
         <div
           data-timeline-clip-block
+          data-agent-item-id={item.id}
+          data-caption-layer={presentationOnly || undefined}
           className={cn(
-            "relative flex h-full w-full select-none items-center overflow-hidden border text-[10px] font-medium transition-[box-shadow,filter,border-color,transform] duration-150 ease-out",
-            "rounded-[10px] [-webkit-user-select:none] [user-select:none]",
+            "relative flex h-full w-full select-none items-center overflow-hidden border text-[11px] font-medium transition-colors duration-150 ease-out",
+            "rounded-[5px] [-webkit-user-select:none] [user-select:none]",
             VARIANT_STYLES[variant],
             !isAudio && !showFilmstrip && "px-1.5",
             selected &&
               !collision &&
-              !agentMentioned &&
+              !showAgentMention &&
               !isAudio &&
               variant !== "text" &&
+              variant !== "caption" &&
               "z-20 border-[#3B82F6] shadow-[0_0_0_1.5px_#3B82F6]",
             selected &&
               !collision &&
-              !agentMentioned &&
-              (isAudio || variant === "text") &&
+              !showAgentMention &&
+              (isAudio || variant === "text" || variant === "caption") &&
               "z-20 border-white/90 shadow-[0_0_0_1.5px_rgba(255,255,255,0.9)]",
-            agentMentioned &&
+            showAgentMention &&
               !collision &&
-              (agentBusy ? "editor-clip-agent-working" : "editor-clip-agent-mentioned"),
+              "border-white/90 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.7)]",
             collision &&
               "z-30 shadow-[0_0_0_2px_#f87171,0_0_16px_rgba(239,68,68,0.45)] brightness-110",
             item.hidden && "opacity-40",
           )}
         >
+        {presentationOnly && captionSegments?.length ? (
+          <span className="pointer-events-none absolute inset-0 z-[5]" aria-hidden>
+            {captionSegments.map((segment) => {
+              const laneDuration = Math.max(1, item.endMs - item.startMs);
+              const segmentLeft = ((segment.startMs - item.startMs) / laneDuration) * 100;
+              const segmentWidth = ((segment.endMs - segment.startMs) / laneDuration) * 100;
+              return (
+                <span
+                  key={segment.id}
+                  data-caption-cue
+                  className="absolute inset-y-[2px] flex items-center overflow-hidden rounded-[3px] bg-zinc-100 px-1 text-[9px] text-zinc-700 shadow-[inset_0_0_0_1px_rgba(0,0,0,0.14)]"
+                  style={{ left: `${segmentLeft}%`, width: `max(1px, calc(${segmentWidth}% - 3px))` }}
+                >
+                  <span className="block truncate">{"text" in segment ? segment.text : segment.label}</span>
+                </span>
+              );
+            })}
+          </span>
+        ) : null}
         {showFilmstrip && filmstripSrc ? (
           <Filmstrip
             thumbUrl={filmstripSrc}
             widthPx={width}
             heightPx={trackHeight}
-            preferVideo={filmstripIsVideo}
+            onLoadError={handleThumbLoadError}
           />
         ) : null}
-
-        {/* Hover: duration chip (VisualTracks mock) */}
-        {clipHovered && width > 72 && (
-          <span className="pointer-events-none absolute left-1.5 top-1/2 z-30 -translate-y-1/2 rounded-full bg-black/75 px-2 py-0.5 text-[9px] font-medium tabular-nums text-white shadow-sm">
-            {isClip ? "Video" : isAudio ? "Audio" : variant === "caption" ? "Caption" : "Clip"}{" "}
-            {formatTimecode(item.endMs - item.startMs)}
-          </span>
-        )}
-
         {/* Corner badges — play / image; motion graphics use inline star instead */}
         {isClip && width > 36 && variant !== "generated" && !clipHovered ? (
           <span
@@ -509,26 +689,12 @@ function TimelineClipBlockInner({
           </span>
         ) : null}
 
-        {/* Agent mention / working indicator (Rush-style check) */}
-        {agentMentioned && width > 36 ? (
-          <span
-            className={cn(
-              "pointer-events-none absolute right-1.5 top-1/2 z-30 inline-flex size-[16px] -translate-y-1/2 items-center justify-center rounded-full bg-white text-[#111] shadow-[0_0_10px_rgba(255,255,255,0.45)]",
-              agentBusy && "editor-clip-agent-badge",
-            )}
-            title={agentBusy ? "Editor Agent working on this clip" : "Mentioned in Editor Agent"}
-            aria-hidden
-          >
-            <Check className="size-2.5" strokeWidth={3} />
-          </span>
-        ) : null}
-
         {/* Effect sparkle on media clips that have enter/exit presets */}
         {showFxBadge &&
         variant !== "generated" &&
         variant !== "text" &&
         width > 52 &&
-        !agentMentioned ? (
+        !showAgentMention ? (
           <span
             className="pointer-events-none absolute right-1.5 top-1.5 z-20 inline-flex size-[15px] items-center justify-center rounded-md bg-violet-500/95 text-white shadow-[0_0_10px_rgba(139,92,246,0.55)]"
             title="Effect applied"
@@ -539,7 +705,7 @@ function TimelineClipBlockInner({
         ) : null}
 
         {/* Premium trim end-caps (mockup) — only when selected */}
-        {selected && canEdit && width > 48 ? (
+        {selected && canEdit && !presentationOnly && width > 48 ? (
           <>
             <TrimCapGrip side="left" tone={VARIANT_CAP[variant]} />
             <TrimCapGrip side="right" tone={VARIANT_CAP[variant]} />
@@ -547,7 +713,7 @@ function TimelineClipBlockInner({
         ) : null}
 
         {/* Invisible hit targets over the caps */}
-        {canEdit && width > 40 && (
+        {canEdit && !presentationOnly && width > 40 && (
           <div
             role="presentation"
             data-trim-handle
@@ -562,8 +728,10 @@ function TimelineClipBlockInner({
           role="presentation"
           className={cn(
             "relative z-10 flex min-w-0 flex-1 cursor-pointer select-none items-center gap-1 text-left [-webkit-user-select:none] [user-select:none]",
-            isAudio ? "justify-center px-3" : "px-1",
-            selected && canEdit && "px-3",
+            // Waveform is absolutely positioned, so the audio hit area needs an
+            // explicit height even when zoom/scroll hides the inline label.
+            isAudio ? "h-full justify-center px-3" : "px-1",
+            selected && canEdit && !presentationOnly && "px-3",
           )}
           onClick={(e) => {
             e.stopPropagation();
@@ -571,7 +739,7 @@ function TimelineClipBlockInner({
               suppressClickRef.current = false;
               return;
             }
-            onSelect();
+            onSelect(item.id);
             if (e.altKey) onOpenInspector?.();
           }}
           onDoubleClick={(e) => {
@@ -580,17 +748,24 @@ function TimelineClipBlockInner({
             const sel = window.getSelection();
             if (sel) sel.removeAllRanges();
             suppressClickRef.current = true;
-            onSelect();
-            addAgentMentions([item.id]);
+            onSelect(item.id);
+            const store = useEditorStore.getState();
+            if (store.ui.agentMentionIds.includes(item.id)) store.removeAgentMention(item.id);
+            else addAgentMentions([item.id]);
             toggleAgentPanel(true);
           }}
           onPointerDown={(e) => {
             if ((e.target as HTMLElement).closest("[data-trim-handle]")) return;
-            onSelect();
-            if (canEdit && width > 40) startDrag("move", e);
+            onSelect(item.id);
+            if (canEdit && !presentationOnly && width > 40) startDrag("move", e);
           }}
         >
-          {isAudio && <AudioWaveform seed={item.id} widthPx={width} />}
+          {isAudio && <AudioWaveform
+            widthPx={width}
+            src={asset ? resolveMediaUrlOrFallback(asset.url, asset.metadata?.proxyUrl, asset.metadata?.sourceKey) : undefined}
+            sourceStartMs={"sourceStartMs" in item ? item.sourceStartMs ?? 0 : 0}
+            durationMs={item.endMs - item.startMs}
+          />}
           {isAudio && showLabel ? (
             <span className="relative z-10 inline-flex max-w-[85%] items-center gap-1 truncate rounded-md bg-black/40 px-1.5 py-0.5 text-[10px] font-semibold text-white shadow-sm backdrop-blur-[2px]">
               <Volume2 className="size-3 shrink-0 opacity-90" aria-hidden />
@@ -606,7 +781,7 @@ function TimelineClipBlockInner({
               <Sparkles className="relative z-10 size-3.5 shrink-0 text-white drop-shadow" />
             )
           )}
-          {!isAudio && showLabel ? (
+          {!isAudio && showLabel && !presentationOnly ? (
             <span
               className={cn(
                 "relative z-10 min-w-0 truncate drop-shadow-[0_1px_2px_rgba(0,0,0,0.8)]",
@@ -620,22 +795,7 @@ function TimelineClipBlockInner({
             </span>
           ) : null}
         </div>
-
-        {canEdit && showHideToggle && !isAudio && (
-          <div
-            role="presentation"
-            className="absolute right-5 top-1/2 z-20 flex size-4 -translate-y-1/2 cursor-pointer items-center justify-center rounded text-white/60 opacity-0 hover:bg-black/50 hover:text-white group-hover/clip:opacity-100"
-            title={item.hidden ? "Show" : "Hide"}
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleItemHidden(item.id);
-            }}
-          >
-            {item.hidden ? <EyeOff className="size-2.5" /> : <Eye className="size-2.5" />}
-          </div>
-        )}
-
-        {canEdit && width > 40 && (
+        {canEdit && !presentationOnly && width > 40 && (
           <div
             role="presentation"
             data-trim-handle
@@ -655,48 +815,52 @@ function TimelineClipBlockInner({
         if (!hasReal && !showBoundary) return null;
         if (hasReal) {
           return (
-            <div
-              role="presentation"
+            <button
+              type="button"
+              data-transition-control
               className={cn(
-                "absolute z-30 flex size-[18px] -translate-x-1/2 cursor-pointer items-center justify-center rounded-[5px] transition-all duration-200 hover:scale-110",
+                "absolute inset-y-0.5 z-30 flex w-6 -translate-x-1/2 cursor-pointer items-center justify-center rounded-[5px] border border-zinc-300 transition-colors hover:bg-white hover:text-black focus-visible:outline-2 focus-visible:outline-cyan-300",
                 transitionSelected
-                  ? "bg-white text-zinc-900 shadow-[0_0_0_2px_#4FD1ED,0_0_12px_rgba(79,209,237,0.45)]"
-                  : "bg-[#E8E8EC] text-zinc-700 shadow-[0_2px_8px_rgba(0,0,0,0.4)]",
+                  ? "bg-white text-zinc-950 shadow-[0_0_0_2px_#60A5FA,0_0_12px_rgba(96,165,250,0.35)]"
+                  : "bg-zinc-100 text-zinc-800 shadow-[0_2px_8px_rgba(0,0,0,0.35)]",
               )}
-              style={{ left: left + width, top: trackHeight / 2 - 9 }}
+              // The transition control is rendered in the lane-level wrapper,
+              // so its coordinate must be global to the timeline canvas.
+              style={{ left: msToPx(item.endMs, zoom) }}
               onClick={(e) => {
                 e.stopPropagation();
-                onSelectTransition?.();
+                onSelectTransition?.(item.id, hasNextAbut);
               }}
               onPointerDown={(e) => e.stopPropagation()}
               title={`${transition!.transitionType} transition`}
             >
-              <UnfoldHorizontal className="size-2.5 stroke-[2.5]" />
-            </div>
+              <Shuffle className="size-3 stroke-[2.5]" />
+            </button>
           );
         }
         return (
           <div
             className="group/seam absolute z-30 -translate-x-1/2"
             style={{
-              left: left + width,
+              left: msToPx(item.endMs, zoom),
               top: 0,
               width: 20,
               height: trackHeight,
             }}
           >
-            <div
-              role="presentation"
-              className="absolute left-1/2 top-1/2 flex size-[16px] -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center rounded-[4px] bg-[#E8E8EC]/95 text-zinc-600 opacity-0 shadow-[0_2px_8px_rgba(0,0,0,0.35)] transition-all duration-150 hover:scale-110 group-hover/seam:opacity-100"
+            <button
+              type="button"
+              data-transition-control
+              className="absolute inset-y-0.5 left-1/2 flex w-6 -translate-x-1/2 cursor-pointer items-center justify-center rounded-[5px] border border-zinc-300 bg-zinc-100 text-zinc-800 opacity-0 shadow-sm transition-opacity hover:bg-white hover:text-black focus-visible:opacity-100 group-hover/seam:opacity-100"
               onClick={(e) => {
                 e.stopPropagation();
-                onSelectTransition?.();
+                onSelectTransition?.(item.id, hasNextAbut);
               }}
               onPointerDown={(e) => e.stopPropagation()}
               title="Add transition"
             >
-              <UnfoldHorizontal className="size-2.5 stroke-[2.5]" />
-            </div>
+              <Shuffle className="size-3 stroke-[2.5]" />
+            </button>
           </div>
         );
       })()}

@@ -1,4 +1,4 @@
-"""HTTP client for the Remotion Lambda render-service."""
+"""HTTP client for the native cloud render service."""
 
 from __future__ import annotations
 

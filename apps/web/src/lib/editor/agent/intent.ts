@@ -10,7 +10,7 @@ export interface LocalIntentResult {
 }
 
 const TTS_REFUSE_RE =
-  /\b(voiceover|voice[\s-]?over|narrat(ion|or|e)|tts|text[\s-]?to[\s-]?speech|sarvam|regenerate\s+(the\s+)?(voice|audio|speech)|make\s+(the\s+)?narrator|change\s+(the\s+)?voice|re[\s-]?synthesize)\b/i;
+  /\b(tts|text[\s-]?to[\s-]?speech|re[\s-]?synthesize|(?:regenerate|generate|synthesize|replace|change)\s+(?:the\s+)?(?:voice|voiceover)|regenerate\s+(?:the\s+)?(?:narration|speech)|new\s+(?:voice|narrator))\b/i;
 
 const TRANSITION_MAP: Array<{ re: RegExp; type: TransitionType }> = [
   { re: /\b(film[\s-]?burn|filmburn)\b/i, type: "film-burn" },
@@ -26,7 +26,7 @@ function resolveTargetItemId(): string | null {
   const state = useEditorStore.getState();
   if (state.ui.selectedItemId) return state.ui.selectedItemId;
   const playhead = state.ui.playheadMs;
-  for (const trackType of ["broll", "video", "captions", "text", "music", "sfx", "animation"] as const) {
+  for (const trackType of ["broll", "video", "captions", "text", "music", "sfx", "animation", "narration"] as const) {
     const track = state.timeline.tracks.find((t) => t.type === trackType);
     if (!track) continue;
     for (const item of track.items) {
@@ -72,9 +72,34 @@ export function matchLocalIntent(message: string): LocalIntentResult {
       kind: "refuse_tts",
       ops: [],
       reply:
-        "I can’t change voiceover or regenerate narration — that’s outside the editor agent (TTS boundary). Edit captions/text on the timeline, or re-run generation from the project page if you need a new voice track.",
+        "Voice regeneration runs through the project generation workflow. I can mix, trim, move or fade the existing narration track.",
       confidence: 1,
     };
+  }
+
+  const unquoted = text.replace(/["“][\s\S]*?["”]|'[^']*'/g, "");
+  if (/\b(and|then|analy[sz]e|arrange|research|automatic|automatically|based on|suggest|propose)\b|[;\n]/i.test(unquoted)) {
+    return { kind: "none", ops: [], reply: "", confidence: 0 };
+  }
+  if (/^(undo|redo)(?:\s+(?:that|edit|last edit))?[.!]?$/i.test(text)) {
+    const op = /^undo/i.test(text) ? "undo" : "redo";
+    return { kind: "ops", ops: [{ op }], reply: op === "undo" ? "Undoing the last edit." : "Restoring the last edit.", confidence: 1 };
+  }
+  const caption = text.match(/\b(cinematic|clean[ _-]highlight|kinetic|editorial)\b.*\bcaptions?\b/i) ?? text.match(/\bcaptions?\b.*\b(cinematic|clean[ _-]highlight|kinetic|editorial)\b/i);
+  if (caption) {
+    const style = caption[1]!.toLowerCase().replace(/[ -]/g, "_") as "cinematic" | "clean_highlight" | "kinetic" | "editorial";
+    return { kind: "ops", ops: [{ op: "update_caption_style", style }], reply: "Applying the caption style to the project.", confidence: 0.95 };
+  }
+  if (/\b(add|place|insert)\b.*\b(whoosh|impact|tick)\b/i.test(text)) {
+    const preset = /\bwhoosh\b/i.test(text) ? "soft_whoosh" : /\bimpact\b/i.test(text) ? "soft_impact" : "editorial_tick";
+    return { kind: "ops", ops: [{ op: "add_sfx", preset }], reply: "Adding a sound cue at the playhead.", confidence: 0.95 };
+  }
+  if (/^(?:add|create)\s+(?:a\s+)?(?:moving\s+)?(?:frame|shape|circle)\b/i.test(text)) {
+    const frame = /\bframe\b/i.test(text);
+    const state = useEditorStore.getState();
+    const selected = state.getSelectedItem();
+    const asset = selected && "assetId" in selected ? state.getAsset(selected.assetId) : undefined;
+    return { kind: "ops", ops: [{ op: "add_graphic", type: frame ? "frame" : "shape", shape: /\bcircle\b/i.test(text) ? "circle" : "rectangle", ...(frame && asset?.mediaType === "image" ? { src: asset.url } : {}), text: quotedText(text) ?? (frame ? "" : ""), width_pct: 42, height_pct: 54, color: "#38bdf8", keyframes: [{ time_sec: 0, x: 28, y: 50, opacity: 0 }, { time_sec: 0.4, x: 35, y: 50, opacity: 1 }, { time_sec: 3.6, x: 65, y: 50, opacity: 1 }, { time_sec: 4, x: 72, y: 50, opacity: 0 }] }], reply: "Adding an animated object at the playhead.", confidence: 0.92 };
   }
 
   // delete / remove this
@@ -139,6 +164,54 @@ export function matchLocalIntent(message: string): LocalIntentResult {
     };
   }
 
+  // full-screen motion graphic from natural language only
+  if (/\b(full[\s-]?screen|after effects|motion\s*graphic|motion\s*graphics|animated\s+(scene|graphic)|product\s+launch|cash|counter|revenue|metric|demo)\b/i.test(text)) {
+    const state = useEditorStore.getState();
+    const startMs = state.ui.playheadMs;
+    const isMoney = /\b(cash|\$|dollar|revenue|money|sales|profit)\b/i.test(text);
+    const cleanTopic = text
+      .replace(/\b(create|make|add|insert|full[\s-]?screen|after effects|style|motion\s*graphics?|animated|graphic|scene|with|for|a|an|the)\b/gi, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    const visibleTotal = text.match(/\$[\d,]+(?:\.\d+)?/);
+    const title =
+      quotedText(text) ||
+      visibleTotal?.[0] ||
+      (isMoney ? "Cash Flow" : cleanTopic.split(" ").slice(0, 4).join(" ") || "Key Moment");
+    const subtitle = isMoney
+      ? "Cash-counter inspired motion without invented totals"
+      : "Designed around the requested scene context";
+    const slots = isMoney
+      ? [
+          { label: "Counter", text: "Animated total readout", color: "#35f0a6" },
+          { label: "Cash", text: "Layered bill stacks", color: "#7dd3fc" },
+          { label: "Lighting", text: "Premium sweep", color: "#facc15" },
+          { label: "Captions", text: "Readable karaoke", color: "#fb7185" },
+        ]
+      : [
+          { label: "Focus", text: title, color: "#35f0a6" },
+          { label: "Look", text: "Cinematic lighting", color: "#7dd3fc" },
+          { label: "Motion", text: "Light sweep", color: "#facc15" },
+          { label: "Finish", text: "Readable captions", color: "#fb7185" },
+        ];
+    return {
+      kind: "ops",
+      ops: [
+        {
+          op: "add_motion_template",
+          templateId: "product-launch-fullscreen",
+          startMs,
+          durationMs: 5500,
+          title,
+          subtitle,
+          slots,
+        },
+        { op: "update_caption_style", style: "karaoke" },
+      ],
+      reply: "Adding a full-screen premium motion-graphics scene at the playhead and switching captions to timed karaoke styling.",
+      confidence: 0.93,
+    };
+  }
   // add subscribe CTA
   if (/\b(subscribe|cta)\b/i.test(text) && /\b(add|show|place)\b/i.test(text)) {
     const target = resolveTargetItemId();

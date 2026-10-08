@@ -8,7 +8,9 @@ Modular AI video generation platform. Users create projects from a prompt or scr
 apps/web              Next.js frontend
 apps/api              FastAPI backend
 workers/orchestrator  Temporal workflows
-workers/media         FFmpeg render worker
+workers/media         Native media and audio pipeline
+render-service        Cloud job API, graphics rasterization, encoding
+packages/video-engine Deterministic scene graphics and browser media timing
 packages/shared-types Cross-language domain types
 packages/timeline-schema  Timeline manifest JSON Schema
 infrastructure        Docker Compose and scripts
@@ -78,5 +80,10 @@ The MVP vertical slice is implemented end-to-end:
 - Quote generation + approval gate
 - Async generation pipeline (Temporal) with live progress (SSE)
 - 1080p H.264 MP4 render (FFmpeg) and download
+- Owned preview/export engine with premium captions, animated graphic objects,
+  original footage audio, native transitions, cancellation, and section caching
+
+See [native engine architecture](docs/adr/0012-native-video-engine.md) for the
+runtime, verification commands, deployment requirements, and current limits.
 
 Not yet fully migrated: Postgres pipeline domain → Mongo (ADR 0011 Phase 2); API JWT bridge from Better Auth session; credit metering enforcement.

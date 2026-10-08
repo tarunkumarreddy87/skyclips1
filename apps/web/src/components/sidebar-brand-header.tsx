@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { PanelLeft } from "lucide-react";
+import { PanelLeft, X } from "lucide-react";
 import { BrandLogo } from "@/components/brand-logo";
 import { BRAND_MARK_SIZE, PRODUCT_NAME } from "@/lib/brand";
 import { SidebarHeader, useSidebar } from "@/components/ui/sidebar";
@@ -12,8 +12,8 @@ import { cn } from "@/lib/utils";
  * Collapsed: logo lives in AppSidebar nav rail (same gap as other icons).
  */
 export function SidebarBrandHeader() {
-  const { state, toggleSidebar } = useSidebar();
-  const collapsed = state === "collapsed";
+  const { state, toggleSidebar, isMobile } = useSidebar();
+  const collapsed = !isMobile && state === "collapsed";
 
   if (collapsed) {
     return null;
@@ -36,14 +36,14 @@ export function SidebarBrandHeader() {
         <button
           type="button"
           onClick={toggleSidebar}
-          aria-label="Collapse sidebar"
+          aria-label={isMobile ? "Close navigation menu" : "Collapse sidebar"}
           className={cn(
             "ml-auto inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-sidebar-foreground/55",
             "transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground",
             "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring/50",
           )}
         >
-          <PanelLeft className="size-4" />
+          {isMobile ? <X className="size-5" /> : <PanelLeft className="size-4" />}
         </button>
       </div>
     </SidebarHeader>

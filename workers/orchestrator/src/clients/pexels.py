@@ -5,6 +5,7 @@ from __future__ import annotations
 import httpx
 
 from src.config import settings
+from src.clients.media_relevance import rank_media
 
 PEXELS_API_URL = "https://api.pexels.com/v1"
 PEXELS_VIDEO_API_URL = "https://api.pexels.com/videos"
@@ -29,7 +30,7 @@ async def search_photos(query: str, *, per_page: int = 5, orientation: str = "la
 
     data = response.json()
     photos = data.get("photos", [])
-    return [
+    return rank_media([
         {
             "id": photo.get("id"),
             "url": photo.get("url"),
@@ -38,7 +39,7 @@ async def search_photos(query: str, *, per_page: int = 5, orientation: str = "la
             "alt": photo.get("alt"),
         }
         for photo in photos
-    ]
+    ], query)
 
 
 def _pick_video_file(video: dict) -> dict | None:
@@ -104,4 +105,4 @@ async def search_videos(query: str, *, per_page: int = 5, orientation: str = "la
                 "height": chosen.get("height"),
             }
         )
-    return out
+    return rank_media(out, query)

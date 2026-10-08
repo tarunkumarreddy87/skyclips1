@@ -6,6 +6,14 @@ from botocore.client import Config
 
 from app.config import settings
 
+# Derived preview assets (proxy/poster/sprite) overwrite in place on force re-derive —
+# short max-age + rely on ETag/Last-Modified rather than immutable forever.
+CACHE_CONTROL_DERIVED_MEDIA = "public, max-age=86400"
+# Versioned / content-addressed objects (when keys never overwrite).
+CACHE_CONTROL_IMMUTABLE = "public, max-age=31536000, immutable"
+# JSON editor docs / manifests: short private-ish cache (presign still gates access).
+CACHE_CONTROL_JSON = "private, max-age=60"
+
 
 def _make_client(endpoint_url: str | None):
     access_key = (settings.s3_access_key or "").strip() or None
@@ -55,7 +63,7 @@ class StorageService:
         content_type: str,
         expires_in: int = 3600,
     ) -> str:
-        return self.client.generate_presigned_url(
+        return self.public_client.generate_presigned_url(
             "put_object",
             Params={
                 "Bucket": self.bucket,
@@ -76,8 +84,45 @@ class StorageService:
             ExpiresIn=expires_in,
         )
 
-    def upload_bytes(self, s3_key: str, data: bytes, content_type: str) -> None:
-        self.client.put_object(Bucket=self.bucket, Key=s3_key, Body=data, ContentType=content_type)
+    def presigned_internal_download_url(self, s3_key: str, expires_in: int = 3600) -> str:
+        """Signed GET for server-side media readers on the storage network."""
+        return self.client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": self.bucket, "Key": s3_key},
+            ExpiresIn=expires_in,
+        )
+
+    def public_download_url(self, s3_key: str, expires_in: int = 14400) -> str:
+        """
+        Browser-facing GET URL for an object.
+
+        When MEDIA_CDN_BASE_URL is set (CloudFront / Cloudflare → S3 with OAC
+        or equivalent), return an unsigned CDN URL. Otherwise fall back to a
+        short-lived S3/MinIO presigned URL (default 4h for editor sessions).
+        """
+        cdn = (settings.media_cdn_base_url or "").strip().rstrip("/")
+        if cdn:
+            key = s3_key.lstrip("/")
+            return f"{cdn}/{key}"
+        return self.presigned_download_url(s3_key, expires_in=expires_in)
+
+    def upload_bytes(
+        self,
+        s3_key: str,
+        data: bytes,
+        content_type: str,
+        *,
+        cache_control: str | None = None,
+    ) -> None:
+        params: dict = {
+            "Bucket": self.bucket,
+            "Key": s3_key,
+            "Body": data,
+            "ContentType": content_type,
+        }
+        if cache_control:
+            params["CacheControl"] = cache_control
+        self.client.put_object(**params)
 
     def get_object_bytes(self, s3_key: str) -> bytes:
         response = self.client.get_object(Bucket=self.bucket, Key=s3_key)

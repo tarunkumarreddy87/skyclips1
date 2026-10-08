@@ -55,12 +55,13 @@ def _prompt_blob(project: Project, brief: Brief) -> str:
 
 
 def _estimate_duration(project: Project, brief: Brief) -> int:
-    # Prefer explicit UI / brief target (dropdown selection) over free-text hints.
-    if brief.target_duration_sec:
-        return clamp_duration_sec(brief.target_duration_sec)
+    # A duration stated in the user brief is the most specific intent. This
+    # also handles the UI default when a prompt asks for a longer runtime.
     from_text = parse_duration_sec(_prompt_blob(project, brief))
     if from_text is not None:
         return clamp_duration_sec(from_text)
+    if brief.target_duration_sec:
+        return clamp_duration_sec(brief.target_duration_sec)
     if project.format_mode == FormatMode.LISTICLE:
         return 180
     return 300
@@ -108,7 +109,8 @@ def _content_density_warning(duration_sec: int, brief: Brief, outline: list[dict
 
 
 def _credit_estimate(duration_sec: int) -> int:
-    return max(CREDITS_PER_MINUTE, (duration_sec // 60) * CREDITS_PER_MINUTE)
+    # Bill partial minutes proportionally but round up so every requested second is covered.
+    return max(CREDITS_PER_MINUTE, ((duration_sec + 59) // 60) * CREDITS_PER_MINUTE)
 
 
 def _listicle_sections_from_script(script_text: str) -> list[dict[str, str]]:

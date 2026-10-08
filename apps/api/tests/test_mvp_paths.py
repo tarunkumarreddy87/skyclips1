@@ -36,7 +36,9 @@ async def test_script_first_quote_and_generate_mocked_temporal(client: AsyncClie
 
     quote = await client.post(f"/projects/{project['id']}/quote")
     assert quote.status_code == 200
-    await client.post(f"/projects/{project['id']}/approve")
+    await client.post(
+        f"/projects/{project['id']}/approve", json={"quoteId": quote.json()["id"]}
+    )
 
     with patch(
         "app.services.generation_service.TemporalService.start_video_generation",
@@ -71,7 +73,9 @@ async def test_listicle_quote_gate(client: AsyncClient):
     assert quote.status_code == 200, quote.text
     assert quote.json()["formatMode"] == "listicle"
 
-    approve = await client.post(f"/projects/{project['id']}/approve")
+    approve = await client.post(
+        f"/projects/{project['id']}/approve", json={"quoteId": quote.json()["id"]}
+    )
     assert approve.status_code == 200
     assert approve.json()["status"] == "approved"
 

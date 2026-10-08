@@ -1,0 +1,31 @@
+{
+  "resolution": [
+    1920,
+    1080
+  ],
+  "fps": 30,
+  "duration_sec": 6,
+  "cold_sec": 125.56918528299866,
+  "warm_sec": 2.02382520899846,
+  "three": {
+    "elapsed_sec": 105.201937183,
+    "jobs": [
+      {
+        "output": "/app/workers/media/proofs/three-mixed/20261002T084051/cold/three/2b74becc6dc8a4e5089dc05071db8b0a0777948edecc10999c345c53d2896517.mp4",
+        "backend": "ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (Subzero) (0x0000C0DE)), SwiftShader driver)",
+        "capture": "raw-rgba",
+        "frames": 60,
+        "readback_ms": 44869.99999997765,
+        "transfer_ms": 56823.60000002384,
+        "elapsed_sec": 103.425086743
+      }
+    ]
+  },
+  "service": {
+    "render_id": "1fd2b564-8a52-4964-8540-554d6a27950d",
+    "status": "completed",
+    "encoder": "h264_nvenc",
+    "elapsed_sec": 108.60645510700124,
+    "frames": 180
+  }
+}

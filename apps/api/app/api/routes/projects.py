@@ -12,7 +12,7 @@ from app.schemas.project import (
     UploadUrlRequest,
     UploadUrlResponse,
 )
-from app.schemas.quote import QuoteResponse, UpdateQuoteRequest
+from app.schemas.quote import ApproveQuoteRequest, QuoteResponse, UpdateQuoteRequest
 from app.services.project_service import ProjectService
 from app.services.quote_service import QuoteService
 from app.services.storage import StorageService
@@ -64,7 +64,7 @@ async def create_upload_url(
         content_type=payload.content_type,
         expires_in=expires_in,
     )
-    download_url = storage.presigned_download_url(s3_key, expires_in=expires_in)
+    download_url = storage.public_download_url(s3_key, expires_in=expires_in)
     return UploadUrlResponse(
         upload_url=upload_url,
         s3_key=s3_key,
@@ -114,7 +114,10 @@ async def update_quote(
 @router.post("/{project_id}/approve", response_model=QuoteResponse)
 async def approve_quote(
     project_id: uuid.UUID,
+    payload: ApproveQuoteRequest | None = None,
     user: User = Depends(get_current_user),
     service: QuoteService = Depends(get_quote_service),
 ) -> QuoteResponse:
-    return await service.approve_quote(user, project_id)
+    return await service.approve_quote(
+        user, project_id, expected_quote_id=payload.quote_id if payload else None
+    )

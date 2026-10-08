@@ -51,7 +51,10 @@ def put_bytes(key: str, data: bytes, content_type: str) -> int:
 
 def get_bytes(key: str) -> bytes:
     response = _s3_client().get_object(Bucket=settings.s3_bucket, Key=key)
-    return response["Body"].read()
+    try:
+        return response["Body"].read()
+    finally:
+        response["Body"].close()
 
 
 def get_json(key: str) -> dict:

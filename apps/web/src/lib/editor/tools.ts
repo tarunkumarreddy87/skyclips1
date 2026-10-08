@@ -8,6 +8,7 @@ import {
   Music,
   Type,
   Wand2,
+  SlidersHorizontal,
   type LucideIcon,
 } from "lucide-react";
 import type { LeftTool } from "./types";
@@ -23,6 +24,7 @@ export const EDITOR_TOOLS: {
   { id: "audio", icon: Music, label: "Audio" },
   { id: "animations", icon: Wand2, label: "Motion & text" },
   { id: "transitions", icon: Blend, label: "Transitions" },
+  { id: "effects", icon: SlidersHorizontal, label: "Filters & effects" },
   { id: "templates", icon: Layers, label: "Themes" },
   { id: "files", icon: FileStack, label: "Files" },
   { id: "history", icon: History, label: "History" },

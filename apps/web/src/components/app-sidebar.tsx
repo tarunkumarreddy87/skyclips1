@@ -7,8 +7,7 @@ import {
   FolderKanban,
   HelpCircle,
   Home,
-  LogOut,
-  MessageSquare,
+  Palette,
   Settings2,
   SquarePen,
 } from "lucide-react";
@@ -20,8 +19,9 @@ import {
 import { listProjects } from "@/lib/api-client";
 import type { Project } from "@hanuman/shared-types";
 import { projectHref } from "@/lib/project-routes";
+import { projectThumbnailUrl } from "@/lib/project-thumbnail";
 import { cn } from "@/lib/utils";
-import { signOut, useSession } from "@/lib/auth-client";
+import { useSession } from "@/lib/auth-client";
 import {
   Sidebar,
   SidebarContent,
@@ -32,32 +32,9 @@ import {
 
 const topNav = [
   { href: "/studio", label: "Home", icon: Home },
-  { href: "/settings", label: "Setting", icon: Settings2 },
   { href: "/projects", label: "Projects", icon: FolderKanban },
+  { href: "/brand-profiles", label: "Channel profiles", icon: Palette },
 ];
-
-function AuthSidebarAction({ collapsed }: { collapsed: boolean }) {
-  void collapsed;
-  const { data: session } = useSession();
-  const btn =
-    "flex items-center gap-3 rounded-xl px-2.5 py-2 text-left text-[13px] text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-100 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0";
-
-  if (session?.user) {
-    return (
-      <button type="button" className={btn} onClick={() => void signOut()}>
-        <LogOut className="size-4 shrink-0" />
-        <span className="group-data-[collapsible=icon]:hidden">Log out</span>
-      </button>
-    );
-  }
-
-  return (
-    <Link href="/sign-in" className={btn} title="Sign in">
-      <LogOut className="size-4 shrink-0" />
-      <span className="group-data-[collapsible=icon]:hidden">Sign in</span>
-    </Link>
-  );
-}
 
 function monthLabel(iso: string): string {
   const d = new Date(iso);
@@ -81,11 +58,15 @@ function statusBadge(status: string): string {
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname();
-  const { state } = useSidebar();
-  const collapsed = state === "collapsed";
+  const { state, isMobile, setOpenMobile } = useSidebar();
+  const collapsed = !isMobile && state === "collapsed";
+  useEffect(() => { setOpenMobile(false); }, [pathname, setOpenMobile]);
+  const { data: session, isPending } = useSession();
   const [projects, setProjects] = useState<Project[]>([]);
 
   useEffect(() => {
+    if (isPending) return;
+    if (!session?.user) { setProjects([]); return; }
     let cancelled = false;
     void listProjects()
       .then((res) => {
@@ -97,10 +78,10 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     return () => {
       cancelled = true;
     };
-  }, [pathname]);
+  }, [pathname, session?.user?.id, isPending]);
 
   const grouped = useMemo(() => {
-    const sorted = [...projects].sort(
+    const sorted = [...new Map(projects.map((p) => [p.id, p])).values()].sort(
       (a, b) =>
         new Date(b.updatedAt || b.createdAt).getTime() -
         new Date(a.updatedAt || a.createdAt).getTime(),
@@ -126,14 +107,16 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
     >
       <SidebarBrandHeader />
 
-      <SidebarContent className={cn("gap-0 px-2 pb-2", collapsed ? "pt-2" : "pt-1.5")}>
+      <SidebarContent onClick={(event) => {
+        if (isMobile && (event.target as HTMLElement).closest("a[href]")) setOpenMobile(false);
+      }} className={cn("gap-0 px-2 pb-2", collapsed ? "pt-2" : "pt-1.5")}>
         <nav className="flex flex-col gap-1.5">
           {collapsed ? <SidebarCollapsedLogoButton /> : null}
           <Link
             href="/studio"
             title="New video"
             className={cn(
-              "flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] text-sidebar-foreground/80 transition-colors",
+              "flex h-11 items-center gap-2 rounded-lg px-2 text-[13px] text-sidebar-foreground/80 transition-colors md:h-8",
               "hover:bg-sidebar-accent hover:text-sidebar-foreground",
               collapsed && "size-8 justify-center p-0",
             )}
@@ -153,7 +136,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 href={item.href}
                 title={item.label}
                 className={cn(
-                  "flex h-8 items-center gap-3 rounded-lg px-2.5 text-[13px] transition-colors",
+                  "flex h-11 items-center gap-3 rounded-lg px-2.5 text-[13px] transition-colors md:h-8",
                   active
                     ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
                     : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
@@ -168,7 +151,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         </nav>
 
         {!collapsed ? (
-          <div className="mt-4 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+          <div tabIndex={0} role="region" aria-label="Recent projects" className="sidebar-history-scroll mt-4 flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
             {grouped.map(([month, items]) => (
               <div key={month}>
                 <p className="mb-1.5 px-2.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-sidebar-foreground/40">
@@ -182,6 +165,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                       <li key={p.id}>
                         <Link
                           href={href}
+                          prefetch={false}
                           className={cn(
                             "flex items-center gap-2.5 rounded-xl px-2 py-1.5 transition-colors",
                             active
@@ -189,18 +173,27 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                               : "text-sidebar-foreground/60 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground",
                           )}
                         >
-                          <span className="flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-gradient-to-br from-zinc-700 to-zinc-900 text-[10px] font-semibold text-zinc-300 ring-1 ring-white/10">
+                          <span className="relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted text-[10px] font-semibold text-muted-foreground ring-1 ring-sidebar-border">
                             {(p.title || "V").slice(0, 1).toUpperCase()}
+                            {/* The same representative image used by the project list; the letter remains if it fails. */}
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={projectThumbnailUrl(p.id, p.formatMode)}
+                              alt=""
+                              loading="lazy"
+                              className="absolute inset-0 size-full object-cover"
+                              onError={(event) => { event.currentTarget.style.display = "none"; }}
+                            />
                           </span>
                           <span className="min-w-0 flex-1">
-                            <span className="block truncate text-[12px] font-medium leading-tight text-zinc-200">
+                            <span className="block truncate text-[12px] font-medium leading-tight text-sidebar-foreground">
                               {p.title || "Untitled"}
                             </span>
-                            <span className="block truncate text-[10px] text-zinc-600">
+                            <span className="block truncate text-[10px] text-sidebar-foreground/50">
                               {formatShortDate(p.updatedAt || p.createdAt)}
                             </span>
                           </span>
-                          <span className="shrink-0 rounded-full border border-white/10 px-1.5 py-0.5 text-[9px] font-medium capitalize text-zinc-500">
+                          <span className="shrink-0 rounded-full border border-sidebar-border px-1.5 py-0.5 text-[9px] font-medium capitalize text-sidebar-foreground/55">
                             {statusBadge(p.status)}
                           </span>
                         </Link>
@@ -211,7 +204,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               </div>
             ))}
             {projects.length === 0 ? (
-              <p className="px-2.5 text-[11px] text-zinc-600">
+              <p className="px-2.5 text-[11px] text-sidebar-foreground/50">
                 No projects yet — create one from Home.
               </p>
             ) : null}
@@ -220,25 +213,33 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
         <div className={cn("mt-auto flex flex-col gap-0.5 pt-3", collapsed && "items-center")}>
           <Link
-            href="/feedback"
-            className="flex items-center gap-3 rounded-xl px-2.5 py-2 text-[13px] text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-100 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+            href="/settings/profile"
+            title="Settings"
+            aria-label="Settings"
+            className={cn(
+              "flex items-center gap-3 rounded-xl px-2.5 py-2 text-[13px] transition-colors group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0",
+              pathname.startsWith("/settings")
+                ? "bg-sidebar-accent font-medium text-sidebar-accent-foreground"
+                : "text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground",
+            )}
           >
-            <HelpCircle className="size-4 shrink-0" />
-            <span className="group-data-[collapsible=icon]:hidden">Support</span>
+            <Settings2 className="size-4 shrink-0" />
+            <span className="group-data-[collapsible=icon]:hidden">Settings</span>
           </Link>
           <Link
             href="/feedback"
-            className="flex items-center gap-3 rounded-xl px-2.5 py-2 text-[13px] text-zinc-400 hover:bg-white/[0.05] hover:text-zinc-100 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
+            title="Help & feedback"
+            aria-label="Help & feedback"
+            className="flex items-center gap-3 rounded-xl px-2.5 py-2 text-[13px] text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-foreground group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0"
           >
-            <MessageSquare className="size-4 shrink-0" />
-            <span className="group-data-[collapsible=icon]:hidden">Feedback</span>
+            <HelpCircle className="size-4 shrink-0" />
+            <span className="group-data-[collapsible=icon]:hidden">Help & feedback</span>
           </Link>
-          <AuthSidebarAction collapsed={collapsed} />
         </div>
       </SidebarContent>
 
-      <SidebarFooter className="p-2">
-        <SidebarAccountMenu />
+      <SidebarFooter className={cn("p-2", collapsed && "flex items-center justify-center")}>
+        <SidebarAccountMenu collapsed={collapsed} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

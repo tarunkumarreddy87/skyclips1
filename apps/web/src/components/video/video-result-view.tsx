@@ -1,59 +1,49 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
 import { Download, Loader2, Share2, TriangleAlert } from "lucide-react";
 import {
   downloadVideo,
   getLatestRun,
   startRender,
   subscribeProgress,
-  type ArtifactResponse,
-  type GenerationRun,
 } from "@/lib/api-client";
 import { fetchSavedTimelineManifest } from "@/lib/editor/fetch-saved-timeline-manifest";
 import { Button } from "@/components/ui/button";
+import { initialVideoResultState, isRendering, videoResultReducer } from "./video-result-state";
 
 export function VideoResultView({ projectId }: { projectId: string }) {
-  const [video, setVideo] = useState<ArtifactResponse | null>(null);
-  const [run, setRun] = useState<GenerationRun | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [{ video, run, error, percent }, dispatch] = useReducer(videoResultReducer, initialVideoResultState);
   const [loading, setLoading] = useState(true);
-  const [percent, setPercent] = useState<number | null>(null);
   const [retrying, setRetrying] = useState(false);
 
   const mp4Url = useMemo(() => video?.downloadUrl ?? "", [video?.downloadUrl]);
-  const rendering = run?.status === "running" || run?.status === "queued";
+  const rendering = isRendering(run);
+  const activeRunId = rendering ? run?.id ?? null : null;
 
-  const loadVideo = useCallback(async () => {
+  const loadVideo = useCallback(async (runId: string | null, signal?: AbortSignal) => {
     try {
-      const artifact = await downloadVideo(projectId);
-      setVideo(artifact);
-      setError(null);
-      return true;
+      const artifact = await downloadVideo(projectId, signal, runId ?? undefined);
+      if ((artifact.runId ?? null) !== runId) throw new Error("Video for this render is not ready");
+      if (!signal?.aborted) dispatch({ type: "video", runId, video: artifact });
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Video not ready";
-      setError(message);
-      setVideo(null);
-      return false;
+      if (!signal?.aborted) dispatch({ type: "error", runId, message: e instanceof Error ? e.message : "Video not ready" });
     }
   }, [projectId]);
 
   const handleRetryRender = useCallback(async () => {
     setRetrying(true);
-    setError(null);
     try {
       const manifest = await fetchSavedTimelineManifest(projectId);
       const started = await startRender(projectId, manifest);
-      setRun(started.run);
-      setPercent(85);
-      setVideo(null);
+      dispatch({ type: "run", run: started.run, percent: 0 });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not retry render");
+      dispatch({ type: "error", runId: run?.id ?? null, retry: true, message: e instanceof Error ? e.message : "Could not retry render" });
     } finally {
       setRetrying(false);
     }
-  }, [projectId]);
+  }, [projectId, run?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -61,13 +51,9 @@ export function VideoResultView({ projectId }: { projectId: string }) {
       try {
         const latest = await getLatestRun(projectId);
         if (cancelled) return;
-        setRun(latest);
-        const ok = await loadVideo();
-        if (!ok && latest?.status === "running") {
-          setError(null);
-        }
+        dispatch({ type: "run", run: latest });
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load");
+        if (!cancelled) dispatch({ type: "error", runId: null, message: e instanceof Error ? e.message : "Failed to load" });
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -75,43 +61,55 @@ export function VideoResultView({ projectId }: { projectId: string }) {
     return () => {
       cancelled = true;
     };
-  }, [projectId, loadVideo]);
+  }, [projectId]);
 
   useEffect(() => {
-    if (!run || run.status === "completed" || run.status === "failed") return;
+    if (loading || (run && run.status !== "completed")) return;
+    const controller = new AbortController();
+    void loadVideo(run?.id ?? null, controller.signal);
+    return () => controller.abort();
+  }, [loading, run?.id, run?.status, loadVideo]);
+
+  useEffect(() => {
+    if (!activeRunId) return;
+
+    let cancelled = false;
+    let refreshInFlight = false;
+    const refreshRun = async () => {
+      if (cancelled || refreshInFlight) return;
+      refreshInFlight = true;
+      try {
+        const latest = await getLatestRun(projectId);
+        if (cancelled || !latest) return;
+        dispatch({ type: "run", run: latest });
+      } catch {
+        /* retry on the next event/poll */
+      } finally {
+        refreshInFlight = false;
+      }
+    };
 
     const unsubscribe = subscribeProgress(projectId, (event) => {
-      if (event.runId !== run.id) return;
-      if (typeof event.percent === "number") setPercent(event.percent);
+      if (event.runId !== activeRunId) return;
+      dispatch({ type: "progress", event });
       if (event.stage === "enqueue_render" && event.status === "completed") {
-        void loadVideo();
-        void getLatestRun(projectId).then((latest) => {
-          if (latest) setRun(latest);
-        });
+        void refreshRun();
       }
       if (event.status === "failed") {
-        setError(event.message || "Render failed");
-        void getLatestRun(projectId).then((latest) => {
-          if (latest) setRun(latest);
-        });
+        void refreshRun();
       }
     });
 
-    const poll = setInterval(() => {
-      void getLatestRun(projectId).then((latest) => {
-        if (!latest) return;
-        setRun(latest);
-        if (latest.status === "completed") void loadVideo();
-      });
-    }, 2500);
+    const poll = setInterval(() => void refreshRun(), 2500);
 
     return () => {
+      cancelled = true;
       unsubscribe();
       clearInterval(poll);
     };
-  }, [projectId, run, loadVideo]);
+  }, [projectId, activeRunId]);
 
-  if (loading) {
+  if (loading || (run?.status === "completed" && !video && !error)) {
     return (
       <div className="flex items-center justify-center gap-2 py-24 text-muted-foreground">
         <Loader2 className="size-5 animate-spin" />
@@ -120,7 +118,7 @@ export function VideoResultView({ projectId }: { projectId: string }) {
     );
   }
 
-  if (rendering && !video) {
+  if (rendering) {
     return (
       <div className="mx-auto max-w-xl space-y-4 py-16 text-center">
         <Loader2 className="mx-auto size-8 animate-spin text-primary" />
@@ -169,7 +167,7 @@ export function VideoResultView({ projectId }: { projectId: string }) {
               )}
             </Button>
           ) : (
-            <Button type="button" onClick={() => void loadVideo()}>
+            <Button type="button" onClick={() => void loadVideo(run?.id ?? null)}>
               Retry
             </Button>
           )}

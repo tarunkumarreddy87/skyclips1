@@ -1,4 +1,5 @@
 export { validateTimeline, isValidTimeline, formatValidationErrors, schema } from "./validate";
+export { inspectTimeline, type TimelineIssue } from "./inspect";
 export type {
   AnimationPreset,
   LoopPreset,

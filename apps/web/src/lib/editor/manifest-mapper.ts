@@ -1,5 +1,9 @@
 import type { ProjectDetail } from "@hanuman/shared-types";
-import { resolveThemeId } from "@hanuman/shared-types";
+import {
+  getTemplateByManifestType,
+  isMotionGraphicManifestType,
+  resolveThemeId,
+} from "@hanuman/shared-types";
 import type {
   Asset,
   EditorProject,
@@ -14,6 +18,7 @@ import type {
 import type { TimelineApiResponse, TimelineManifestV1, TimelineTransition, ElementAnimation as ManifestElementAnimation } from "./manifest-types";
 import type { ElementAnimation } from "./types";
 import { DEFAULT_ZOOM } from "./utils";
+import { editorCaptionFontSize, editorTextFontSize } from "./text-size";
 import {
   dedupeOverlappingCaptions,
   realignCaptionsToSpeechLayout,
@@ -125,7 +130,7 @@ function mapMotionOverlays(
     if (overlay.type === "freeform_text" && textTrack) {
       const t = overlay.transform;
       const fontUi = overlay.style?.font_size_px
-        ? Math.max(14, Math.min(64, Math.round(overlay.style.font_size_px / 3.2)))
+        ? editorTextFontSize(overlay.style.font_size_px)
         : 32;
       textTrack.items.push({
         id: overlay.id || `txt-${overlay.start_sec}`,
@@ -158,7 +163,12 @@ function mapMotionOverlays(
 
     if (!animationTrack) continue;
 
-    if (overlay.type === "subscribe_cta") {
+    if (overlay.type === "generated_scene" && overlay.scene) {
+      animationTrack.items.push({ id: overlay.id, type: "animation", preset: "generated-scene", intensity: 70,
+        startMs: secToMs(overlay.start_sec), endMs: secToMs(overlay.start_sec + overlay.duration_sec),
+        title: overlay.title || overlay.scene.title, label: overlay.title || overlay.scene.title, scene: overlay.scene,
+        position: { x: 50, y: 50 }, transform: mapManifestTransform(overlay.transform) ?? { x: 50, y: 50, scaleX: 1, scaleY: 1, rotation: 0, zIndex: 25 }, hidden: false });
+    } else if (overlay.type === "subscribe_cta") {
       animationTrack.items.push({
         id: overlay.id || "anim-subscribe-cta",
         type: "animation",
@@ -180,13 +190,14 @@ function mapMotionOverlays(
         hidden: false,
       });
     } else if (overlay.type === "chapter_title") {
+      const isLower = (overlay.transform?.y ?? 40) > 65;
       animationTrack.items.push({
         id: overlay.id || `anim-chapter-${overlay.start_sec}`,
         type: "animation",
         startMs: secToMs(overlay.start_sec),
         endMs: secToMs(overlay.start_sec + overlay.duration_sec),
         label: overlay.text || "Chapter",
-        preset: "chapter-title",
+        preset: isLower ? "lower-third" : "chapter-title",
         intensity: 70,
         boxWidthPct: overlay.style?.box_width_pct ?? 70,
         position: { x: overlay.transform?.x ?? 50, y: overlay.transform?.y ?? 40 },
@@ -201,6 +212,34 @@ function mapMotionOverlays(
         animation: mapManifestAnimation(overlay.animation),
         hidden: false,
       });
+    } else if (isMotionGraphicManifestType(overlay.type)) {
+      const meta = getTemplateByManifestType(overlay.type);
+      animationTrack.items.push({
+        id: overlay.id || `anim-mg-${overlay.start_sec}`,
+        type: "animation",
+        startMs: secToMs(overlay.start_sec),
+        endMs: secToMs(overlay.start_sec + overlay.duration_sec),
+        label: overlay.title || overlay.text || meta?.label || overlay.type,
+        preset: meta?.id || overlay.type.replace(/_/g, "-"),
+        intensity: 70,
+        boxWidthPct: overlay.style?.box_width_pct ?? 72,
+        title: overlay.title || overlay.text,
+        subtitle: overlay.subtitle,
+        slots: overlay.slots,
+        imageRefs: overlay.image_refs,
+        themeId: overlay.theme_id,
+        position: { x: overlay.transform?.x ?? 50, y: overlay.transform?.y ?? 48 },
+        transform: mapManifestTransform(overlay.transform) ?? {
+          x: 50,
+          y: 48,
+          scaleX: 1,
+          scaleY: 1,
+          rotation: 0,
+          zIndex: 25,
+        },
+        animation: mapManifestAnimation(overlay.animation),
+        hidden: false,
+      });
     }
   }
 }
@@ -211,14 +250,14 @@ function defaultSettings(): Timeline["settings"] {
     snappingEnabled: true,
     showTransitions: true,
     captionsEnabled: true,
-    captionStyle: "bold_static",
+    captionStyle: "cinematic",
     backgroundColor: "#000000",
     backgroundImage: null,
     overlayDropShadow: true,
     narrationVolume: 100,
     musicVolume: 35,
     sfxVolume: 50,
-    clipAudioVolume: 0,
+    clipAudioVolume: 100,
     previewMuted: false,
     themeId: "standard",
   };
@@ -282,6 +321,9 @@ function buildAssets(manifest: TimelineManifestV1, mediaUrls: Record<string, str
   for (const clip of manifest.tracks.music || []) {
     pushClip(clip, clip.label || "Music bed", "audio");
   }
+  for (const graphic of manifest.graphics ?? []) {
+    if (graphic.src) pushClip({ ...graphic, src: graphic.src }, graphic.text || "Frame image", "image");
+  }
 
   return [...assets.values()];
 }
@@ -307,6 +349,10 @@ export function mapManifestToTimeline(manifest: TimelineManifestV1, mediaUrls: R
   if (manifest.settings?.sfx_volume != null) {
     settings.sfxVolume = Math.round(manifest.settings.sfx_volume * 100);
   }
+  if (manifest.settings?.clip_audio_volume != null) settings.clipAudioVolume = Math.round(manifest.settings.clip_audio_volume * 100);
+  if (manifest.settings?.background_color) settings.backgroundColor = manifest.settings.background_color;
+  if (manifest.settings?.background_image) settings.backgroundImage = mediaUrls[manifest.settings.background_image] ?? manifest.settings.background_image;
+  if (manifest.settings?.overlay_drop_shadow != null) settings.overlayDropShadow = manifest.settings.overlay_drop_shadow;
   if (manifest.settings?.theme_id) {
     settings.themeId = manifest.settings.theme_id;
   }
@@ -324,12 +370,15 @@ export function mapManifestToTimeline(manifest: TimelineManifestV1, mediaUrls: R
       mediaType: clip.type === "image" ? "image" : "video",
       assetId: assetIdForSrc(clip.src),
       fitMode: clip.fit ?? "cover",
-      muted: true,
+      muted: clip.muted ?? true,
       hidden: false,
       sourceStartMs: secToMs(clip.source_start_sec ?? 0),
       thumbnailUrl: clip.type === "image" ? url : undefined,
       transform: mapManifestTransform(clip.transform),
       animation: mapManifestAnimation(clip.animation),
+      threeScene: clip.three_scene,
+      visualEffects: clip.visual_effects,
+      motionTemplate: clip.motion_template,
     });
   }
 
@@ -346,12 +395,14 @@ export function mapManifestToTimeline(manifest: TimelineManifestV1, mediaUrls: R
       mediaType: clip.type === "image" ? "image" : "video",
       assetId: assetIdForSrc(clip.src),
       fitMode: clip.fit ?? "cover",
-      muted: true,
+      muted: clip.muted ?? true,
       hidden: false,
       sourceStartMs: secToMs(clip.source_start_sec ?? 0),
       thumbnailUrl: clip.type === "image" ? url : undefined,
       transform: mapManifestTransform(clip.transform),
       animation: mapManifestAnimation(clip.animation),
+      threeScene: clip.three_scene,
+      visualEffects: clip.visual_effects,
     });
   }
 
@@ -404,7 +455,7 @@ export function mapManifestToTimeline(manifest: TimelineManifestV1, mediaUrls: R
       sectionId: cap.section_id || undefined,
       stylePreset: "default",
       fontSize: Math.max(14, Math.min(32, Math.round(
-        // Prefer UI-sized values; downscale composition-sized (Remotion) fonts for the inspector.
+        // Prefer UI-sized values; downscale composition-sized (native engine) fonts for the inspector.
         (style?.font_size_px ?? 20) >= 36
           ? (style!.font_size_px! / 3)
           : (style?.font_size_px ?? 20),
@@ -454,6 +505,20 @@ export function mapManifestToTimeline(manifest: TimelineManifestV1, mediaUrls: R
   }
 
   mapMotionOverlays(tracks, manifest.overlays);
+  const graphicsTrack = tracks.find((track) => track.type === "animation");
+  for (const graphic of manifest.graphics ?? []) {
+    const id = uniqueId(graphic.id, seenIds, `graphic-${seenIds.size}`);
+    const transform = mapManifestTransform(graphic.transform);
+    graphicsTrack?.items.push({
+      id, type: "animation", startMs: secToMs(graphic.start_sec),
+      endMs: secToMs(graphic.start_sec + graphic.duration_sec),
+      label: graphic.text || (graphic.type === "bar_chart" ? "Bar chart" : graphic.type === "frame" ? "Moving frame" : "Shape"),
+      preset: `graphic-${graphic.type}`, intensity: 70,
+      position: { x: transform?.x ?? 50, y: transform?.y ?? 50 }, transform,
+      animation: mapManifestAnimation(graphic.animation),
+      graphic: { ...graphic, id, src: graphic.src ? mediaUrls[graphic.src] ?? graphic.src : undefined }, hidden: false,
+    });
+  }
 
   return {
     id: manifest.metadata.run_id,

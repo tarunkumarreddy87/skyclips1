@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 const FAQ = [
   {
     q: "Will the output actually look professional, or like AI slop?",
-    a: "SkyClip runs a real production pipeline — research, structured script, TTS voiceover, scene-matched B-roll, and Remotion render to 1080p 16:9. You preview the timeline and can polish before export.",
+    a: "SkyClip runs a real production pipeline — research, structured script, TTS voiceover, scene-matched B-roll, and native render to 1080p 16:9. You preview the timeline and can polish before export.",
   },
   {
     q: "How much does a video cost?",

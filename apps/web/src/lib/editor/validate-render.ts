@@ -3,13 +3,13 @@ import { buildTimelineManifestV1FromEditorState } from "./build-timeline-manifes
 import type { TimelineManifestV1 } from "./manifest-types";
 
 export type RenderValidationIssue = {
-  code: "empty_video_track" | "empty_audio_track" | "ghost_clip" | "empty_caption";
+  code: "empty_video_track" | "empty_audio_track" | "ghost_clip" | "empty_caption" | "invalid_timing";
   message: string;
   itemId?: string;
 };
 
 /**
- * VidRush-style preflight: catch ghost / empty clips before enqueueing Remotion.
+ * VidRush-style preflight: catch ghost / empty clips before enqueueing native engine.
  * Ghost clips (missing media src) are the #1 cause of mid-render failures.
  */
 /** Collect all advisory + blocking issues (for timeline warning triangle). */
@@ -24,6 +24,9 @@ export function listEditorValidationIssues(
     if (track.hidden) continue;
     for (const item of track.items) {
       if (item.hidden) continue;
+      if (!Number.isFinite(item.startMs) || !Number.isFinite(item.endMs) || item.startMs < 0 || item.endMs <= item.startMs) {
+        issues.push({ code: "invalid_timing", itemId: item.id, message: `Invalid timing for “${item.label || item.id}”. Set a non-negative start and positive duration.` });
+      }
 
       if (item.type === "video" || item.type === "broll") {
         const asset = assets.find((a) => a.id === item.assetId);
@@ -60,16 +63,10 @@ export function listEditorValidationIssues(
   }
 
   const manifest = buildTimelineManifestV1FromEditorState(projectId, state);
-  if (manifest.tracks.video.length === 0) {
+  if (manifest.tracks.video.length === 0 && !manifest.tracks.broll?.length && !manifest.graphics?.length && !manifest.overlays?.length) {
     issues.push({
       code: "empty_video_track",
-      message: "Timeline has no video clips to render.",
-    });
-  }
-  if (manifest.tracks.audio.length === 0) {
-    issues.push({
-      code: "empty_audio_track",
-      message: "Timeline has no narration audio to render.",
+      message: "Add footage, an image, text or a graphic before rendering.",
     });
   }
   return issues;
@@ -84,9 +81,9 @@ export function validateEditorStateForRender(
   const manifest = buildTimelineManifestV1FromEditorState(projectId, state);
   const blocking = [...issues.filter(
     (i) =>
+      i.code === "invalid_timing" ||
       i.code === "ghost_clip" ||
-      i.code === "empty_video_track" ||
-      i.code === "empty_audio_track",
+      i.code === "empty_video_track",
   )];
 
   // Double-check manifest srcs (builder should have stripped ghosts already).

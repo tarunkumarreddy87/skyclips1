@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.api.deps import get_current_user
-from app.config import Settings
+from app.config import settings
 from app.db.models import User
 
 router = APIRouter(prefix="/stock", tags=["stock"])
@@ -34,7 +34,6 @@ async def search_stock_photos(
     per_page: int = Query(24, ge=1, le=40),
     _: User = Depends(get_current_user),
 ) -> StockSearchResponse:
-    settings = Settings()
     query = (q or "").strip() or "cinematic landscape"
     if not settings.pexels_api_key.strip():
         return StockSearchResponse(items=[], query=query, configured=False)
@@ -49,7 +48,7 @@ async def search_stock_photos(
                 params=params,
             )
     except httpx.HTTPError as exc:
-        raise HTTPException(status_code=502, detail=f"Pexels unreachable: {exc}") from exc
+        raise HTTPException(status_code=502, detail="Pexels is temporarily unreachable") from exc
 
     if response.status_code == 401:
         raise HTTPException(status_code=502, detail="Pexels API key rejected")

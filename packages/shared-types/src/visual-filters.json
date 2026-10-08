@@ -1,0 +1,182 @@
+[
+  {
+    "id": "none",
+    "name": "Original",
+    "contrast": 1.0,
+    "saturation": 1.0,
+    "brightness": 1.0,
+    "sepia": 0.0,
+    "hue": 0.0
+  },
+  {
+    "id": "creator",
+    "name": "Creator",
+    "contrast": 1.09,
+    "saturation": 1.08,
+    "brightness": 1.025,
+    "sepia": 0.02,
+    "hue": 0.0
+  },
+  {
+    "id": "golden-hour",
+    "name": "Golden Hour",
+    "contrast": 1.06,
+    "saturation": 1.12,
+    "brightness": 1.045,
+    "sepia": 0.18,
+    "hue": -7.0
+  },
+  {
+    "id": "soft-film",
+    "name": "Soft Film",
+    "contrast": 0.92,
+    "saturation": 0.9,
+    "brightness": 1.05,
+    "sepia": 0.1,
+    "hue": -2.0
+  },
+  {
+    "id": "night",
+    "name": "Nightfall",
+    "contrast": 1.19,
+    "saturation": 0.76,
+    "brightness": 0.92,
+    "sepia": 0.035,
+    "hue": 3.0
+  },
+  {
+    "id": "cinema",
+    "name": "Cinema",
+    "contrast": 1.18,
+    "saturation": 0.8,
+    "brightness": 0.98,
+    "sepia": 0.08,
+    "hue": -5.0
+  },
+  {
+    "id": "vivid",
+    "name": "Vivid",
+    "contrast": 1.12,
+    "saturation": 1.4,
+    "brightness": 1.04,
+    "sepia": 0.0,
+    "hue": 0.0
+  },
+  {
+    "id": "noir",
+    "name": "Noir",
+    "contrast": 1.5,
+    "saturation": 0.0,
+    "brightness": 0.92,
+    "sepia": 0.0,
+    "hue": 0.0
+  },
+  {
+    "id": "silver",
+    "name": "Silver",
+    "contrast": 1.1,
+    "saturation": 0.0,
+    "brightness": 1.08,
+    "sepia": 0.0,
+    "hue": 0.0
+  },
+  {
+    "id": "vintage",
+    "name": "Vintage",
+    "contrast": 0.92,
+    "saturation": 0.7,
+    "brightness": 1.05,
+    "sepia": 0.48,
+    "hue": -8.0
+  },
+  {
+    "id": "warm",
+    "name": "Warm",
+    "contrast": 1.03,
+    "saturation": 1.1,
+    "brightness": 1.05,
+    "sepia": 0.32,
+    "hue": -12.0
+  },
+  {
+    "id": "cool",
+    "name": "Cool",
+    "contrast": 1.06,
+    "saturation": 0.85,
+    "brightness": 1.03,
+    "sepia": 0.15,
+    "hue": 165.0
+  },
+  {
+    "id": "faded",
+    "name": "Faded",
+    "contrast": 0.78,
+    "saturation": 0.65,
+    "brightness": 1.18,
+    "sepia": 0.08,
+    "hue": 0.0
+  },
+  {
+    "id": "emerald",
+    "name": "Emerald",
+    "contrast": 1.13,
+    "saturation": 1.08,
+    "brightness": 0.98,
+    "sepia": 0.22,
+    "hue": 42.0
+  },
+  {
+    "id": "rose",
+    "name": "Rose",
+    "contrast": 1.02,
+    "saturation": 0.9,
+    "brightness": 1.06,
+    "sepia": 0.25,
+    "hue": 305.0
+  },
+  {
+    "id": "amber",
+    "name": "Amber",
+    "contrast": 1.18,
+    "saturation": 0.88,
+    "brightness": 1.0,
+    "sepia": 0.58,
+    "hue": -18.0
+  },
+  {
+    "id": "documentary",
+    "name": "Documentary",
+    "contrast": 1.12,
+    "saturation": 0.62,
+    "brightness": 1.0,
+    "sepia": 0.12,
+    "hue": 0.0
+  },
+  {
+    "id": "clean",
+    "name": "Clean",
+    "contrast": 1.04,
+    "saturation": 1.04,
+    "brightness": 1.1,
+    "sepia": 0.0,
+    "hue": 0.0
+  },
+  {
+    "id": "bleach",
+    "name": "Bleach",
+    "contrast": 1.6,
+    "saturation": 0.4,
+    "brightness": 1.1,
+    "sepia": 0.0,
+    "hue": 0.0
+  },
+  {
+    "id": "dream",
+    "name": "Dream",
+    "contrast": 0.86,
+    "saturation": 1.13,
+    "brightness": 1.16,
+    "sepia": 0.09,
+    "hue": -4.0
+  }
+]

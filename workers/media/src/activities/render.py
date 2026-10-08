@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import time
+import threading
 
 import httpx
 from temporalio import activity
@@ -14,7 +15,7 @@ from src.render.render_service_client import render_with_render_service
 
 logger = logging.getLogger(__name__)
 
-# Remotion can emit progress many times per second; throttle SSE fan-out so the
+# Renderer progress is throttled so the
 # activity event loop can still heartbeat (Temporal cancels after heartbeat_timeout).
 _PROGRESS_MIN_INTERVAL_SEC = 2.0
 
@@ -38,7 +39,7 @@ def _emit_progress_sync(
     message: str,
     status: str = "started",
 ) -> None:
-    """Sync HTTP from the Remotion bridge thread — avoids flooding the asyncio loop."""
+    """Sync HTTP from the native render thread — avoids flooding the asyncio loop."""
     try:
         with httpx.Client(timeout=10.0) as client:
             client.post(
@@ -90,7 +91,7 @@ async def render_video(payload: dict) -> str:
     duration_sec: float | None = None
 
     manifest = json.loads(get_bytes(timeline_key).decode("utf-8"))
-    # Preflight for Remotion and FFmpeg — fail fast on ghost/empty clips.
+    # Preflight for native cloud/local export — fail fast on ghost/empty clips.
     validate_manifest(manifest)
     engine, decision = resolve_render_engine(
         settings.render_engine,
@@ -122,60 +123,27 @@ async def render_video(payload: dict) -> str:
         activity.heartbeat("render_start")
         hb_task = asyncio.create_task(_heartbeat_loop())
         try:
-            if engine.startswith("remotion"):
-                on_progress = _throttled_progress_emitter(base, headers, payload)
-                try:
-                    if engine == "remotion-lambda":
-                        output_key, duration_sec = await asyncio.to_thread(
-                            render_with_render_service,
-                            timeline_key=timeline_key,
-                            project_id=payload["project_id"],
-                            run_id=payload["run_id"],
-                            on_progress=on_progress,
-                        )
-                    else:
-                        from src.render.remotion_bridge import render_with_remotion
-
-                        output_key, duration_sec = await asyncio.to_thread(
-                            render_with_remotion,
-                            timeline_key=timeline_key,
-                            project_id=payload["project_id"],
-                            run_id=payload["run_id"],
-                            engine=engine,
-                            on_progress=on_progress,
-                        )
-                except Exception as remotion_exc:
-                    if not settings.render_ffmpeg_fallback:
-                        raise
-                    activity.logger.warning(
-                        "Remotion render failed (%s); falling back to FFmpeg",
-                        remotion_exc,
-                    )
-                    await client.post(
-                        f"{base}/internal/progress-events",
-                        json={
-                            "runId": payload["run_id"],
-                            "projectId": payload["project_id"],
-                            "stage": "enqueue_render",
-                            "status": "started",
-                            "message": "Remotion unavailable — falling back to FFmpeg",
-                            "percent": 86,
-                        },
-                        headers=headers,
-                    )
+            cancel_event = threading.Event()
+            raw_progress = _throttled_progress_emitter(base, headers, payload)
+            on_progress = lambda percent, message: raw_progress(85 + round(percent * .14), message)
+            try:
+                if engine == "native-cloud":
                     output_key, duration_sec = await asyncio.to_thread(
-                        render_from_timeline_key,
-                        timeline_key,
-                        payload["project_id"],
-                        payload["run_id"],
+                        render_with_render_service,
+                        timeline_key=timeline_key,
+                        project_id=payload["project_id"],
+                        run_id=payload["run_id"],
+                        on_progress=on_progress,
+                        cancel_event=cancel_event,
                     )
-            else:
-                output_key, duration_sec = await asyncio.to_thread(
-                    render_from_timeline_key,
-                    timeline_key,
-                    payload["project_id"],
-                    payload["run_id"],
-                )
+                else:
+                    output_key, duration_sec = await asyncio.to_thread(
+                        render_from_timeline_key, timeline_key, payload["project_id"], payload["run_id"],
+                        on_progress=on_progress, cancel_event=cancel_event,
+                    )
+            except asyncio.CancelledError:
+                cancel_event.set()
+                raise
         finally:
             hb_task.cancel()
             try:

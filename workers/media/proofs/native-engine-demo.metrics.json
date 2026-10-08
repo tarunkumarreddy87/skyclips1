@@ -1,0 +1,61 @@
+{
+  "cold_sec": 88.004,
+  "cached_sec": 1.686,
+  "duration_sec": "12.000000",
+  "width": 1920,
+  "height": 1080,
+  "fps": "30/1",
+  "frames": "360",
+  "encoder": "libx264",
+  "parallel_sections": 2,
+  "ffmpeg_threads": 2,
+  "logical_cpu_count": 12,
+  "platform": "Windows-11-10.0.26200-SP0",
+  "cold_render_seconds_per_video_second": 7.334,
+  "cached_render_seconds_per_video_second": 0.14,
+  "graphics_runtime_sha256": "5f6f905cadb2a5fc2f7c9098ae1c12c501f7299e490909a0f519889f3e274ca4",
+  "note": "Local synthetic footage; not a comparative or cloud benchmark.",
+  "cold_sections": [
+    {
+      "clip": "v0",
+      "cache_hit": false,
+      "prepare_sec": 0.06238449999364093,
+      "transition_sec": 5.57999883312732e-05,
+      "graphics_composition_encoding_sec": 40.21669770000153,
+      "total_sec": 40.279137999983504
+    },
+    {
+      "clip": "v1",
+      "cache_hit": false,
+      "prepare_sec": 0.06322719997842796,
+      "transition_sec": 4.3100008042529225e-05,
+      "graphics_composition_encoding_sec": 78.66333660000237,
+      "total_sec": 78.72660689998884
+    },
+    {
+      "clip": "v2",
+      "cache_hit": false,
+      "prepare_sec": 0.1012951000011526,
+      "transition_sec": 8.00006091594696e-07,
+      "graphics_composition_encoding_sec": 44.5139363000053,
+      "total_sec": 44.61523220001254
+    }
+  ],
+  "cached_sections": [
+    {
+      "clip": "v0",
+      "cache_hit": true,
+      "total_sec": 0.1095799999893643
+    },
+    {
+      "clip": "v1",
+      "cache_hit": true,
+      "total_sec": 0.10733540001092479
+    },
+    {
+      "clip": "v2",
+      "cache_hit": true,
+      "total_sec": 0.07217769999988377
+    }
+  ]
+}

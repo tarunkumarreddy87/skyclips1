@@ -26,6 +26,7 @@ LANGUAGE_MAP: dict[str, str] = {
     "ml": "ml-IN",
     "mr": "mr-IN",
     "od": "od-IN",
+    "or": "od-IN",
     "pa": "pa-IN",
     "ta": "ta-IN",
     "te": "te-IN",
@@ -34,13 +35,6 @@ LANGUAGE_MAP: dict[str, str] = {
 # Official bulbul:v3 speaker ids (API rejects anything else).
 SARVAM_SPEAKERS: frozenset[str] = frozenset(
     {
-        "anushka",
-        "abhilash",
-        "manisha",
-        "vidya",
-        "arya",
-        "karun",
-        "hitesh",
         "aditya",
         "ritu",
         "priya",
@@ -85,11 +79,11 @@ SARVAM_SPEAKERS: frozenset[str] = frozenset(
 SPEAKER_ALIASES: dict[str, str] = {
     "sarvam-hi": "kavya",
     "sarvam-en-in": "aditya",
-    "sarvam-en-us": "abhilash",
+    "sarvam-en-us": "aditya",
     "eleven-clive": "shubh",
     "eleven-david": "aditya",
-    "eleven-sarah": "anushka",
-    "eleven-aria": "manisha",
+    "eleven-sarah": "kavya",
+    "eleven-aria": "ritu",
     "hanuman-neutral": "shubh",
 }
 
@@ -120,9 +114,10 @@ def resolve_target_language(language: str) -> str:
     normalized = language.strip().lower()
     if normalized in LANGUAGE_MAP:
         return LANGUAGE_MAP[normalized]
-    if "-" in normalized:
-        return normalized
-    return settings.sarvam_tts_language
+    base = normalized.split("-", 1)[0]
+    if base in LANGUAGE_MAP:
+        return LANGUAGE_MAP[base]
+    raise ValueError(f"Narration language {language!r} is not supported by the configured voice provider")
 
 
 def resolve_speaker(speaker: str | None) -> str:

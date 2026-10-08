@@ -22,6 +22,9 @@ export function ClipPropertiesCard({ item }: { item: ClipItem }) {
     <div className="space-y-3 rounded-lg border border-white/10 p-3">
       <p className="text-xs font-medium text-zinc-400">Clip</p>
       <p className="text-[10px] text-zinc-600">{item.label}</p>
+      {item.type === "video" && item.motionTemplate && <Button size="sm" variant="outline" onClick={() => {
+        const state = useEditorStore.getState(); state.setActiveTool("text"); state.toggleToolPanel(true); state.setRightPanelOpen(false);
+      }}>Edit template</Button>}
 
       <Button
         size="sm"

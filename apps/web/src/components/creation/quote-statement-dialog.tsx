@@ -193,7 +193,7 @@ export function QuoteStatementDialog({
 
           <div className="flex items-center justify-between rounded-lg border bg-card p-4">
             <div>
-              <p className="text-sm text-muted-foreground">Estimated credits</p>
+              <p className="text-sm text-muted-foreground">Credits used when generation starts</p>
               <p className="text-2xl font-semibold">{project.estimatedCredits}</p>
             </div>
             <div className="text-right text-sm text-muted-foreground">

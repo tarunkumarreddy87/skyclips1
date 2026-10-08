@@ -27,8 +27,6 @@ $ImageTag = $State.imageTag
 $DbPassword = $State.dbPassword
 $InternalKey = $State.internalApiKey
 $ArtifactsBucket = $State.artifactsBucket
-$RemotionFunctionName = $State.remotionFunctionName
-$RemotionServeUrl = $State.remotionServeUrl
 $VpcId = $State.vpcId
 
 $SubnetIds = @((Invoke-Aws ec2 describe-subnets --filters "Name=vpc-id,Values=$VpcId" --query "Subnets[*].SubnetId" --output text --region $Region) -split "\s+" | Where-Object { $_ })
@@ -90,8 +88,7 @@ if (-not (Test-Aws iam get-role --role-name $TaskRole)) {
     Invoke-Aws iam create-role --role-name $TaskRole --assume-role-policy-document "file://$($env:TEMP.Replace('\','/'))/ecs-trust.json" | Out-Null
     $tp = @"
 {"Version":"2012-10-17","Statement":[
-{"Effect":"Allow","Action":["s3:*"],"Resource":["arn:aws:s3:::$ArtifactsBucket","arn:aws:s3:::$ArtifactsBucket/*","arn:aws:s3:::remotionlambda-*","arn:aws:s3:::remotionlambda-*/*"]},
-{"Effect":"Allow","Action":["lambda:InvokeFunction","lambda:GetFunction"],"Resource":"arn:aws:lambda:${Region}:${AccountId}:function:remotion-render-*"}
+{"Effect":"Allow","Action":["s3:*"],"Resource":["arn:aws:s3:::$ArtifactsBucket","arn:aws:s3:::$ArtifactsBucket/*"]}
 ]}
 "@
     [IO.File]::WriteAllText("$env:TEMP\hanuman-task.json", $tp)
@@ -137,34 +134,39 @@ function Get-EnvOrDotEnv([string]$Name) {
 $OpenRouterKey = Get-EnvOrDotEnv "OPENROUTER_API_KEY"
 $PexelsKey = Get-EnvOrDotEnv "PEXELS_API_KEY"
 $SarvamKey = Get-EnvOrDotEnv "SARVAM_API_KEY"
-if (-not $OpenRouterKey -or -not $PexelsKey -or -not $SarvamKey) {
-    Write-Warning "OPENROUTER_API_KEY / PEXELS_API_KEY / SARVAM_API_KEY missing - research/TTS/stock will fail until set"
+$SerpApiKey = Get-EnvOrDotEnv "SERPAPI_API_KEY"
+$MediaCdnBase = (Get-EnvOrDotEnv "MEDIA_CDN_BASE_URL").TrimEnd("/")
+if (-not $OpenRouterKey -or -not $PexelsKey -or -not $SarvamKey -or -not $SerpApiKey) {
+    Write-Warning "One or more provider keys missing - research/TTS/stock/web sourcing may fail until set"
 }
 
 $apiEnv = @{
+    APP_ENVIRONMENT="production"
     DATABASE_URL=$DatabaseUrl; REDIS_URL="redis://redis.hanuman.local:6379/0"; API_BASE_URL="http://api.hanuman.local:8000"
     INTERNAL_API_KEY=$InternalKey; S3_BUCKET=$ArtifactsBucket; S3_REGION=$Region; CORS_ORIGINS=$CorsOrigin
     TEMPORAL_HOST="temporal.hanuman.local:7233"; RENDER_SERVICE_URL="http://render-service.hanuman.local:8081"
-    RENDER_ENGINE="remotion-lambda"; HANUMAN_STUB_MODE="false"
-    OPENROUTER_API_KEY=$OpenRouterKey; PEXELS_API_KEY=$PexelsKey; SARVAM_API_KEY=$SarvamKey
+    RENDER_ENGINE="native"; HANUMAN_STUB_MODE="false"
+    OPENROUTER_API_KEY=$OpenRouterKey; PEXELS_API_KEY=$PexelsKey; SARVAM_API_KEY=$SarvamKey; SERPAPI_API_KEY=$SerpApiKey
     S3_ENDPOINT=""; S3_ACCESS_KEY=""; S3_SECRET_KEY=""
+    SUPABASE_URL=$(Get-EnvOrDotEnv "SUPABASE_URL")
+    SUPABASE_ANON_KEY=$(Get-EnvOrDotEnv "SUPABASE_ANON_KEY")
+    SUPABASE_JWT_SECRET=$(Get-EnvOrDotEnv "SUPABASE_JWT_SECRET")
+}
+if ($MediaCdnBase) {
+    $apiEnv["MEDIA_CDN_BASE_URL"] = $MediaCdnBase
+    Write-Host "    MEDIA_CDN_BASE_URL=$MediaCdnBase" -ForegroundColor Cyan
+}
+if (-not $apiEnv["SUPABASE_URL"] -or -not ($apiEnv["SUPABASE_ANON_KEY"] -or $apiEnv["SUPABASE_JWT_SECRET"])) {
+    throw "SUPABASE_URL and either SUPABASE_ANON_KEY or SUPABASE_JWT_SECRET are required when HANUMAN_STUB_MODE=false"
 }
 Register-Task "$EnvironmentName-api" "${EcrBase}/hanuman/api:${ImageTag}" "512" "1024" 8000 $apiEnv "/ecs/$EnvironmentName/api"
 
-# ConcurrentExecutions=10: 8 frame Lambdas + 1 orchestrator + 1 spare.
-# ~2800–3250 frames/chunk @ concurrencyPerLambda=3 keeps wall time ≪ 900s.
 $renderEnv = @{
     PORT="8081"; AWS_ACCESS_KEY_ID=$AwsKey; AWS_SECRET_ACCESS_KEY=$AwsSecret; AWS_REGION=$Region
-    REMOTION_FUNCTION_NAME=$RemotionFunctionName; REMOTION_SERVE_URL=$RemotionServeUrl
     S3_BUCKET_NAME=$ArtifactsBucket; S3_REGION=$Region
-    REMOTION_ACCOUNT_CONCURRENCY_LIMIT="10"
-    REMOTION_MAX_CONCURRENCY="8"
-    REMOTION_CONCURRENCY_PER_LAMBDA="2"
-    REMOTION_FUNCTION_MEMORY_MB="3008"
-    REMOTION_FUNCTION_TIMEOUT_SEC="900"
-    REMOTION_POLL_INTERVAL_MS="1000"
     RENDER_MAX_CONCURRENT="1"
     RENDER_JOB_MAX_RETRIES="3"
+    REDIS_URL="redis://redis.hanuman.local:6379/1"
 }
 Register-Task "$EnvironmentName-render" "${EcrBase}/hanuman/render-service:${ImageTag}" "1024" "2048" 8081 $renderEnv "/ecs/$EnvironmentName/render"
 
@@ -173,34 +175,50 @@ Register-Task "$EnvironmentName-orchestrator" "${EcrBase}/hanuman/orchestrator:$
 Register-Task "$EnvironmentName-media" "${EcrBase}/hanuman/media:${ImageTag}" "512" "1024" $null $workerEnv "/ecs/$EnvironmentName/media"
 
 $MongoUri = Get-EnvOrDotEnv "MONGODB_URI"
-$BetterAuthSecret = Get-EnvOrDotEnv "BETTER_AUTH_SECRET"
+$SupabaseUrl = Get-EnvOrDotEnv "NEXT_PUBLIC_SUPABASE_URL"
+if (-not $SupabaseUrl) { $SupabaseUrl = Get-EnvOrDotEnv "SUPABASE_URL" }
+$SupabaseAnon = Get-EnvOrDotEnv "NEXT_PUBLIC_SUPABASE_ANON_KEY"
+if (-not $SupabaseAnon) { $SupabaseAnon = Get-EnvOrDotEnv "SUPABASE_ANON_KEY" }
 $DodoKey = Get-EnvOrDotEnv "DODO_PAYMENTS_API_KEY"
-if (-not $MongoUri -or -not $BetterAuthSecret) {
-    Write-Warning "MONGODB_URI / BETTER_AUTH_SECRET missing — Better Auth disabled until set (ADR 0011)"
+if (-not $SupabaseUrl -or -not $SupabaseAnon) {
+    Write-Warning "NEXT_PUBLIC_SUPABASE_URL / ANON_KEY missing — Supabase Auth disabled until set (ADR 0013)"
+}
+if (-not $MongoUri) {
+    Write-Warning "MONGODB_URI missing — subscriptions/billing disabled until set"
 }
 
-Register-Task "$EnvironmentName-web" "${EcrBase}/hanuman/web:${ImageTag}" "512" "1024" 3000 @{
+$webEnv = @{
     HOSTNAME="0.0.0.0"; PORT="3000"
-    NEXT_PUBLIC_API_URL="/api"; API_INTERNAL_URL="http://api.hanuman.local:8000"; NEXT_PUBLIC_PREVIEW_ENGINE="remotion"
+    NEXT_PUBLIC_API_URL="/api"; API_INTERNAL_URL="http://api.hanuman.local:8000"; NEXT_PUBLIC_PREVIEW_ENGINE="native"
     NEXT_PUBLIC_APP_URL=$(Get-EnvOrDotEnv "NEXT_PUBLIC_APP_URL")
-    BETTER_AUTH_URL=$(Get-EnvOrDotEnv "BETTER_AUTH_URL")
-    BETTER_AUTH_SECRET=$BetterAuthSecret
+    NEXT_PUBLIC_SUPABASE_URL=$SupabaseUrl
+    NEXT_PUBLIC_SUPABASE_ANON_KEY=$SupabaseAnon
     MONGODB_URI=$MongoUri
     MONGODB_DB_NAME=$(if (Get-EnvOrDotEnv "MONGODB_DB_NAME") { Get-EnvOrDotEnv "MONGODB_DB_NAME" } else { "skyclip" })
     DODO_PAYMENTS_API_KEY=$DodoKey
     DODO_PAYMENTS_WEBHOOK_KEY=$(Get-EnvOrDotEnv "DODO_PAYMENTS_WEBHOOK_KEY")
     DODO_PAYMENTS_ENVIRONMENT=$(if (Get-EnvOrDotEnv "DODO_PAYMENTS_ENVIRONMENT") { Get-EnvOrDotEnv "DODO_PAYMENTS_ENVIRONMENT" } else { "test_mode" })
-} "/ecs/$EnvironmentName/web"
+}
+if ($MediaCdnBase) {
+    $webEnv["NEXT_PUBLIC_MEDIA_CDN_BASE_URL"] = $MediaCdnBase
+}
+# Allow explicit web override (NEXT_PUBLIC_* must be present at image build for Next).
+$WebMediaCdn = (Get-EnvOrDotEnv "NEXT_PUBLIC_MEDIA_CDN_BASE_URL").TrimEnd("/")
+if ($WebMediaCdn) { $webEnv["NEXT_PUBLIC_MEDIA_CDN_BASE_URL"] = $WebMediaCdn }
+
+Register-Task "$EnvironmentName-web" "${EcrBase}/hanuman/web:${ImageTag}" "512" "1024" 3000 $webEnv "/ecs/$EnvironmentName/web"
 
 function Deploy-Svc($Name, $Family, $Port, $DiscId, $Tg) {
     $net = "awsvpcConfiguration={subnets=[$($SubnetIds -join ',')],securityGroups=[$EcsSg],assignPublicIp=ENABLED}"
     $svcName = Invoke-Aws ecs describe-services --cluster $EnvironmentName --services $Name --region $Region --query "services[?status=='ACTIVE'].serviceName | [0]" --output text
     $exists = ($svcName -and $svcName -ne "None")
-    # Postgres/redis use ephemeral Fargate storage — avoid force redeploy or the DB is wiped.
+    # A new task-definition revision replaces tasks even WITHOUT force-new-deployment.
+    # Preserve running stateful tasks; changing these requires a separate storage migration.
     $stateful = @("postgres", "redis") -contains $Name
     if ($exists) {
         if ($stateful) {
-            Invoke-Aws ecs update-service --cluster $EnvironmentName --service $Name --task-definition $Family --region $Region | Out-Null
+            Write-Host "  Preserved existing stateful service: $Name"
+            return
         } else {
             Invoke-Aws ecs update-service --cluster $EnvironmentName --service $Name --task-definition $Family --force-new-deployment --region $Region | Out-Null
         }

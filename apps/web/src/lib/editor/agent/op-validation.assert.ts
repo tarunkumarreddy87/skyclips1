@@ -1,0 +1,11 @@
+import assert from "node:assert/strict";
+import { parseAgentPayload } from "./op-validation";
+assert.equal(parseAgentPayload("move_item", { itemId: "a" }), null);
+assert.equal(parseAgentPayload("move_item", { itemId: "a", startMs: NaN }), null);
+assert.equal(parseAgentPayload("trim_item", { itemId: "a", startMs: 100, endMs: 50 }), null);
+assert.equal(parseAgentPayload("replace_media", { itemId: "a", url: "javascript:alert(1)" }), null);
+assert.equal(parseAgentPayload("update_transform", { itemId: "a", transform: { scaleX: Infinity } }), null);
+assert.deepEqual(parseAgentPayload("update_settings", { patch: { narrationVolume: 0 } }), { op: "update_settings", patch: { narrationVolume: 0 } });
+assert.deepEqual(parseAgentPayload("move_item", { itemId: "a", startMs: 3000, unexpected: 1 }), { itemId: "a", startMs: 3000, op: "move_item" });
+assert.ok(parseAgentPayload("update_transform", { itemId: "a", transform: { x: 40, scaleX: 0.5 } }));
+console.log("Agent operation validation regressions passed");

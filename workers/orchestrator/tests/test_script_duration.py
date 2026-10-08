@@ -4,8 +4,10 @@ from src.activities.pipeline import (
     ENGLISH_CHARS_PER_SEC,
     MAX_SCRIPT_EXTENSION_PASSES,
     SCRIPT_CHUNK_TARGET_SEC,
+    SCRIPT_MAX_TOKENS_CAP,
     TARGET_FILL_RATIO,
     _estimate_spoken_sec,
+    _script_token_budget,
     _section_hint_for_chunk,
 )
 
@@ -14,6 +16,11 @@ def test_section_hint_scales_without_hard_20_cap():
     assert _section_hint_for_chunk(150) >= 5
     assert _section_hint_for_chunk(600) > 20
     assert _section_hint_for_chunk(2400) <= 90
+
+
+def test_telugu_script_chunks_stay_within_nvidia_output_limit():
+    assert SCRIPT_MAX_TOKENS_CAP == 4096
+    assert _script_token_budget(150, "te") <= 4096
 
 
 def test_ten_minute_plan_uses_fewer_chunks_than_before():

@@ -34,11 +34,11 @@ export function ProjectQuoteView({ projectId }: { projectId: string }) {
           if (quote && quote.status === "pending_approval") {
             const durationSec =
               refreshed.brief?.targetDurationSec ?? quote.durationSec ?? 600;
-            await updateQuote(projectId, {
+            const quoteToApprove = await updateQuote(projectId, {
               formatMode: refreshed.formatMode,
               durationSec,
             });
-            await approveQuote(projectId);
+            await approveQuote(projectId, quoteToApprove.id);
           }
           try {
             await startGeneration(projectId);

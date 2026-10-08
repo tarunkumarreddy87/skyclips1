@@ -1,15 +1,19 @@
 "use client";
 
+import { ClipTemplateProperties } from "./clip-template-properties";
+
 import { useState } from "react";
 import {
   Ban,
   FlipHorizontal2,
   Settings2,
+  Sparkles,
   Volume2,
   X,
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
+import { EDITORIAL_A_ROLL_IDS, shippedMotionGraphicTemplates, type EditorialARollId } from "@hanuman/shared-types";
 import { useEditorStore } from "@/lib/editor/store";
 import type { AnimationPreset, ElementAnimation, TimelineItem } from "@/lib/editor/types";
 import { DEFAULT_ANIMATION_DURATION_MS } from "@/lib/editor/animation-presets";
@@ -30,6 +34,7 @@ import {
 import { cn } from "@/lib/utils";
 import { resolveTransform } from "@/lib/editor/transform";
 import { TEXT_STYLE_PRESETS, resolveTextFontFamily } from "@/lib/editor/text-fonts";
+import { GraphicsTool } from "./graphics-tool";
 
 type EdgeTab = "in" | "out";
 
@@ -104,15 +109,19 @@ export function AnimationPanel() {
   const updateItemAnimation = useEditorStore((s) => s.updateItemAnimation);
   const updateItemTransform = useEditorStore((s) => s.updateItemTransform);
   const updateClipMuted = useEditorStore((s) => s.updateClipMuted);
+  const updateClipMotionTemplate = useEditorStore((s) => s.updateClipMotionTemplate);
   const updateAudioVolume = useEditorStore((s) => s.updateAudioVolume);
   const addTextOverlay = useEditorStore((s) => s.addTextOverlay);
+  const addAnimation = useEditorStore((s) => s.addAnimation);
   const updateTextItem = useEditorStore((s) => s.updateTextItem);
   const selectItem = useEditorStore((s) => s.selectItem);
+  const playheadMs = useEditorStore((s) => s.ui.playheadMs);
   const playbackSpeed = useEditorStore((s) => s.ui.playbackSpeed);
   const setPlaybackSpeed = useEditorStore((s) => s.setPlaybackSpeed);
   const toggleToolPanel = useEditorStore((s) => s.toggleToolPanel);
   const setReplaceMediaOpen = useEditorStore((s) => s.setReplaceMediaOpen);
   const [edge, setEdge] = useState<EdgeTab>("in");
+  const graphicTemplates = shippedMotionGraphicTemplates();
 
   const item = supportsAnimation(selectedItem) ? selectedItem : null;
   const animation = item?.animation;
@@ -203,7 +212,63 @@ export function AnimationPanel() {
       </header>
 
       <ScrollArea className="editor-scroll min-h-0 flex-1">
+        {item?.type === "video" && item.motionTemplate && <ClipTemplateProperties key={item.id} item={item} />}
         <div className="flex flex-col gap-5 px-3.5 py-4">
+          <GraphicsTool />
+          <div className="flex flex-col gap-2">
+            <Label className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-400">
+              <Sparkles className="size-3.5" /> Full-frame scenes
+            </Label>
+            <p className="text-[10px] leading-relaxed text-zinc-500">Replaces the selected A-roll clip in 16:9. The clip media becomes the source-image panel; sound is added automatically.</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {EDITORIAL_A_ROLL_IDS.map((id: EditorialARollId) => (
+                <Button key={id} type="button" variant="outline" size="sm"
+                  disabled={item?.type !== "video" || (id === "editorial-data" && !(item.motionTemplate?.values?.length && item.motionTemplate.source_label))}
+                  className="h-auto min-h-9 justify-start whitespace-normal rounded-lg border-white/10 bg-[#1a1a1a] px-2 py-1.5 text-left text-[10px] text-zinc-200"
+                  onClick={() => {
+                    if (item?.type !== "video") return;
+                    updateClipMotionTemplate(item.id, { ...item.motionTemplate, id, motion_component: undefined, title: item.motionTemplate?.title ?? item.label.slice(0, 120) });
+                    toast.success("Full-frame scene applied to A-roll");
+                  }}>
+                  {id.replace("editorial-", "").replaceAll("-", " ")}
+                </Button>
+              ))}
+            </div>
+            <p className="text-[10px] text-zinc-600">Ask Editor Agent to build a data story using cited figures; the editor will not insert demo statistics.</p>
+            {item?.type === "video" && item.motionTemplate && <Button type="button" variant="ghost" size="sm" onClick={() => updateClipMotionTemplate(item.id, null)}>Return to source footage</Button>}
+          </div>
+          <Separator className="bg-white/[0.06]" />
+          <div className="flex flex-col gap-2">
+            <Label className="inline-flex items-center gap-1.5 text-[11px] font-medium text-zinc-400">
+              <Sparkles className="size-3.5" />
+              Motion graphics
+            </Label>
+            <p className="text-[10px] leading-relaxed text-zinc-600">
+              Add a chart, split, news, or quote template at the playhead.
+            </p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {graphicTemplates.map((t) => (
+                <Button
+                  key={t.id}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-auto min-h-9 justify-start whitespace-normal rounded-lg border-white/10 bg-[#1a1a1a] px-2 py-1.5 text-left text-[10px] leading-snug text-zinc-200 hover:bg-white/[0.06]"
+                  onClick={() => {
+                    const id = addAnimation(t.id, playheadMs);
+                    selectItem(id);
+                    toast.success(`Added ${t.label}`);
+                  }}
+                  title={t.hint}
+                >
+                  {t.label}
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          <Separator className="bg-white/[0.06]" />
+
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between gap-2">
               <Label className="text-[11px] font-medium text-zinc-400">Flip</Label>

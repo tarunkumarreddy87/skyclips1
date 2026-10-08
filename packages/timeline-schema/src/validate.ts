@@ -2,7 +2,7 @@ import Ajv from "ajv";
 import addFormats from "ajv-formats";
 import schema from "../schema/timeline.v1.json";
 
-const ajv = new Ajv({ allErrors: true, strict: false });
+const ajv = new Ajv({ allErrors: true, strict: false, strictNumbers: true });
 addFormats(ajv);
 
 export const validateTimeline = ajv.compile(schema);

@@ -5,6 +5,19 @@ import { jobStore } from "../jobs/job-store.js";
 import { cancelRenderJob, startRenderJob } from "../jobs/render-worker.js";
 import type { RenderJobRecord } from "../types.js";
 import { logger } from "../utils/logger.js";
+import { validateTemplateRuntime } from "../native/validate-template.js";
+import type { HtmlTemplate } from "@hanuman/shared-types";
+
+const validateTemplateSchema = z.object({
+  template: z.object({
+    id: z.string().max(100), name: z.string().max(100),
+    html: z.string().min(1).max(16000), css: z.string().max(16000), js: z.string().min(1).max(12000),
+    durationSec: z.number().finite().min(1).max(10),
+    assets: z.array(z.unknown()).max(0).optional(),
+  }),
+  scene: z.record(z.string(), z.union([z.string().max(2000), z.number().finite(), z.boolean(), z.null()])).optional(),
+});
+let templateValidationActive = false;
 
 const startRenderSchema = z.object({
   manifest: z.record(z.string(), z.unknown()),
@@ -26,7 +39,8 @@ function toPublicJob(job: RenderJobRecord) {
     costUsd: job.costUsd,
     error: job.error,
     retryCount: job.retryCount,
-    remotionRenderId: job.remotionRenderId ?? null,
+    engine: job.engine,
+    encoder: job.encoder,
     createdAt: job.createdAt,
     updatedAt: job.updatedAt,
     startedAt: job.startedAt,
@@ -44,6 +58,7 @@ function toResultJob(job: RenderJobRecord) {
 }
 
 async function verifyApiKey(request: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (request.routeOptions.url === "/health") return;
   if (!config.RENDER_SERVICE_API_KEY) return;
   const key = request.headers["x-api-key"] ?? request.headers.authorization?.replace(/^Bearer /, "");
   if (key !== config.RENDER_SERVICE_API_KEY) {
@@ -54,17 +69,24 @@ async function verifyApiKey(request: FastifyRequest, reply: FastifyReply): Promi
 export async function registerRoutes(app: FastifyInstance): Promise<void> {
   app.addHook("preHandler", verifyApiKey);
 
+  app.post("/templates/validate", async (request, reply) => {
+    const parsed = validateTemplateSchema.safeParse(request.body);
+    if (!parsed.success) return reply.code(422).send({valid: false, error: "Invalid template code, duration or assets"});
+    if (templateValidationActive) return reply.code(429).send({valid: false, error: "Template validator is busy; retry shortly"});
+    templateValidationActive = true;
+    try {
+      return await validateTemplateRuntime({...parsed.data.template, assets: [], profileId: "validation", description: "Runtime validation", tags: [], aiEnabled: true} as HtmlTemplate, parsed.data.scene);
+    } finally { templateValidationActive = false; }
+  });
+
   app.get("/health", async () => ({
     status: "ok",
     service: "render-service",
-    engine: "remotion-lambda",
-    lambdaReady: Boolean(
-      config.AWS_ACCESS_KEY_ID && config.AWS_SECRET_ACCESS_KEY && config.REMOTION_SERVE_URL,
-    ),
-    activeJobs: jobStore.listActive().length,
+    engine: "hanuman-native-v1",
+    activeJobs: (await jobStore.listActive()).length,
   }));
 
-  /** POST /render/start — queue a Lambda render job. */
+  /** POST /render/start — queue a native cloud-worker render job. */
   app.post("/render/start", async (request, reply) => {
     const parsed = startRenderSchema.safeParse(request.body);
     if (!parsed.success) {
@@ -85,8 +107,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       });
     }
 
-    const job = startRenderJob({
-      manifest: manifest as unknown as import("@hanuman/remotion-renderer/lib/types").TimelineManifestV1,
+    const job = await startRenderJob({
+      manifest: manifest as unknown as import("@hanuman/shared-types").TimelineManifestV1,
       outputKey,
       projectId,
       runId,
@@ -99,7 +121,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   /** GET /render/:id/status — poll render progress. */
   app.get<{ Params: { id: string } }>("/render/:id/status", async (request, reply) => {
-    const job = jobStore.get(request.params.id);
+    const job = await jobStore.get(request.params.id);
     if (!job) {
       return reply.code(404).send({ detail: "Render job not found", code: "NOT_FOUND" });
     }
@@ -108,7 +130,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
 
   /** GET /render/:id/result — final output URL when complete. */
   app.get<{ Params: { id: string } }>("/render/:id/result", async (request, reply) => {
-    const job = jobStore.get(request.params.id);
+    const job = await jobStore.get(request.params.id);
     if (!job) {
       return reply.code(404).send({ detail: "Render job not found", code: "NOT_FOUND" });
     }

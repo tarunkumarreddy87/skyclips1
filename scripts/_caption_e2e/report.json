@@ -1,9 +1,0 @@
-{
-  "top_luma_on": 8.0,
-  "bottom_luma_on": 21.0,
-  "bottom_luma_off": 8.0,
-  "overflow_ok": true,
-  "toggle_ok": true,
-  "ass_ok": true,
-  "files_differ": true
-}

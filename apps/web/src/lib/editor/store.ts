@@ -1,4 +1,12 @@
+import { threeSceneSchema } from "@hanuman/shared-types";
 import { create } from "zustand";
+import type { GraphicObject } from "@hanuman/shared-types";
+import {
+  defaultSlotsForTemplate,
+  getTemplateMeta,
+  isMotionGraphicManifestType,
+  type TemplateId,
+} from "@hanuman/shared-types";
 import { generateShortId } from "@/lib/id";
 import type {
   Asset,
@@ -16,7 +24,14 @@ import type {
   TransitionType,
 } from "./types";
 import { resolveTransform } from "./transform";
-import { loadEditorState } from "./load-editor-state";
+import {
+  loadEditorState,
+  refreshAssetUrls,
+  refreshClipThumbnails,
+  takePreloadedEditorState,
+} from "./load-editor-state";
+import { clearApiGetCache, fetchProjectTimeline } from "@/lib/api-client";
+import { isPresignedNearExpiry } from "@/lib/http/presigned-expiry";
 import { isEditorLoadError } from "./editor-load-error";
 import {
   flushAutosave,
@@ -28,7 +43,14 @@ import {
 } from "./persist";
 import { clamp, MAX_ZOOM, MIN_ZOOM } from "./utils";
 import { clipsAbut } from "./transition-abut";
+import { findOverlappingClipIds } from "./clip-collision";
 import { TRACK_DISPLAY_ORDER, resolveVisibleTracks } from "./timeline-layout";
+import {
+  applyProxyMetaToAsset,
+  ensureVideoProxies,
+  orderAssetsByTimelineUse,
+  type ProxyMetaPatch,
+} from "./ensure-video-proxies";
 
 type LoadStatus = "idle" | "loading" | "ready" | "error";
 
@@ -43,7 +65,7 @@ interface EditorUIState {
   selectedTransitionId: string | null;
   playheadMs: number;
   /**
-   * Live scrub override (timeline needle drag). Remotion reads this for
+   * Live scrub override (timeline needle drag). The engine reads this for
    * frame-accurate preview while store playhead commits are throttled.
    */
   previewScrubMs: number | null;
@@ -66,16 +88,23 @@ interface EditorUIState {
   resetConfirmOpen: boolean;
   /** Authoritative MP4 duration from last successful render (ms), if known. */
   lastRenderedDurationMs: number | null;
+  /**
+   * Preview-proxy backfill progress. Until a clip has a proxy the preview shows
+   * its poster still, so this drives the "preparing video preview" indicator.
+   */
+  proxyProgress: { ready: number; total: number } | null;
 }
 
 interface EditorStore extends EditorState {
   ui: EditorUIState;
   init: (projectId: string) => Promise<void>;
+  /** Re-fetch timeline mediaUrls and patch asset playable URLs (presign refresh). */
+  refreshMediaUrls: () => Promise<void>;
   setActiveTool: (tool: LeftTool) => void;
   selectItem: (itemId: string | null) => void;
   selectTransition: (transitionId: string | null) => void;
   setPlayhead: (ms: number) => void;
-  /** Ephemeral scrub position for Remotion (null when not scrubbing). */
+  /** Ephemeral scrub position for the graphics engine (null when not scrubbing). */
   setPreviewScrubMs: (ms: number | null) => void;
   setPlaying: (playing: boolean) => void;
   setPlaybackSpeed: (speed: number) => void;
@@ -99,10 +128,12 @@ interface EditorStore extends EditorState {
   addAssetFromUrl: (
     url: string,
     itemId: string,
-    meta?: { sourceKey?: string; label?: string },
+    meta?: { sourceKey?: string; label?: string; mediaType?: Asset["mediaType"]; durationMs?: number; proxyMeta?: Record<string, string>; sourceType?: Asset["sourceType"]; metadata?: Record<string, string> },
   ) => void;
-  moveItem: (itemId: string, startMs: number) => void;
-  trimItem: (itemId: string, startMs: number, endMs: number) => void;
+  /** Apply derived proxy/poster/sprite metadata after upload or lazy backfill. */
+  patchAssetProxyMeta: (assetId: string, patch: ProxyMetaPatch) => void;
+  moveItem: (itemId: string, startMs: number) => boolean;
+  trimItem: (itemId: string, startMs: number, endMs: number) => boolean;
   updateTextItem: (
     itemId: string,
     patch: Partial<{
@@ -119,7 +150,19 @@ interface EditorStore extends EditorState {
   ) => void;
   updateAnimationItem: (
     itemId: string,
-    patch: Partial<{ label: string; intensity: number; boxWidthPct: number }>,
+    patch: Partial<{
+      scene: import("@hanuman/shared-types").MotionScene;
+      label: string;
+      intensity: number;
+      boxWidthPct: number;
+      title: string;
+      subtitle: string;
+      slots: import("./types").MotionSlot[];
+      imageRefs: string[];
+      textStyle: import("./types").AnimationItem["textStyle"];
+      themeId: string;
+      preset: string;
+    }>,
   ) => void;
   updateTextPosition: (itemId: string, x: number, y: number) => void;
   updateItemTransform: (itemId: string, transform: ElementTransform) => void;
@@ -132,6 +175,7 @@ interface EditorStore extends EditorState {
   toggleCaptions: (enabled: boolean) => void;
   setTransition: (transitionId: string, type: TransitionType, durationMs?: number) => void;
   deleteTransition: (transitionId: string) => void;
+  setTransitionSound: (transitionId: string, enabled: boolean) => void;
   addTransition: (afterItemId: string, type: TransitionType, durationMs?: number) => string | null;
   deleteItem: (itemId: string) => boolean;
   duplicateItem: (itemId: string) => string | null;
@@ -153,6 +197,7 @@ interface EditorStore extends EditorState {
     startMs?: number;
     durationMs?: number;
     volume?: number;
+    sourceKey?: string;
   }) => string;
   addSfx: (opts?: {
     label?: string;
@@ -160,6 +205,7 @@ interface EditorStore extends EditorState {
     startMs?: number;
     durationMs?: number;
     volume?: number;
+    sourceKey?: string;
   }) => string;
   addBroll: (opts?: {
     label?: string;
@@ -168,15 +214,23 @@ interface EditorStore extends EditorState {
     durationMs?: number;
     sourceKey?: string;
     sourceType?: Asset["sourceType"];
+    mediaType?: "image" | "video";
+    thumbnailUrl?: string;
+    metadata?: Record<string, string>;
   }) => string;
   toggleItemHidden: (itemId: string) => void;
   updateClipFitMode: (itemId: string, fitMode: FitMode) => void;
   updateClipMuted: (itemId: string, muted: boolean) => void;
+  updateClipEffects: (itemId: string, patch: import("@hanuman/shared-types").ClipVisualEffects) => void;
+  updateClipThreeScene: (itemId: string, scene: import("@hanuman/shared-types").ThreeScene | null) => void;
+  updateClipMotionTemplate: (itemId: string, template: import("@hanuman/shared-types").EditorialARollTemplate | null) => void;
   updateAudioVolume: (itemId: string, volume: number) => void;
   /** Fade times in ms (preview + export via fadedGain / manifest). */
   updateAudioFades: (itemId: string, fadeInMs: number, fadeOutMs: number) => void;
   addTextOverlay: () => string;
   addAnimation: (preset: string, startMs: number) => string;
+  addGraphic: (graphic: Omit<GraphicObject, "id">) => string;
+  updateGraphic: (itemId: string, patch: Partial<GraphicObject>) => void;
   setRestoreDialogId: (id: string | null) => void;
   setResetConfirmOpen: (open: boolean) => void;
   setLastRenderedDurationMs: (ms: number | null) => void;
@@ -218,15 +272,14 @@ const EMPTY_STATE = {
       snappingEnabled: true,
       showTransitions: true,
       captionsEnabled: true,
-      captionStyle: "bold_static" as const,
+      captionStyle: "cinematic" as const,
       backgroundColor: "#000000",
       backgroundImage: null as string | null,
       overlayDropShadow: true,
       narrationVolume: 100,
       musicVolume: 28,
       sfxVolume: 50,
-      // Preview-only; export strips clip audio — default off for honest mix.
-      clipAudioVolume: 0,
+      clipAudioVolume: 100,
       previewMuted: false,
       themeId: "standard" as const,
     },
@@ -250,10 +303,10 @@ function findItem(state: EditorState, itemId: string): TimelineItem | null {
 function findTrackForItem(
   state: EditorState,
   itemId: string,
-): { trackId: string; locked: boolean } | null {
+): { trackId: string; locked: boolean; type: TrackType } | null {
   for (const track of state.timeline.tracks) {
     if (track.items.some((i) => i.id === itemId)) {
-      return { trackId: track.id, locked: Boolean(track.locked) };
+      return { trackId: track.id, locked: Boolean(track.locked), type: track.type };
     }
   }
   return null;
@@ -270,13 +323,35 @@ const MAX_EDIT_HISTORY = 40;
 let gestureHistoryArmed = false;
 let gestureAutosaveFlush: (() => void) | null = null;
 let initGeneration = 0;
+/** Aborts in-flight editor fetches when switching projects / re-init. */
+let initAbort: AbortController | null = null;
 let textEditEndTimer: ReturnType<typeof setTimeout> | null = null;
+/** Periodic mediaUrl refresh while an editor session is open. */
+let mediaRefreshTimer: ReturnType<typeof setInterval> | null = null;
+let mediaRefreshInFlight = false;
+
+function stopMediaUrlRefresh() {
+  if (mediaRefreshTimer != null) {
+    clearInterval(mediaRefreshTimer);
+    mediaRefreshTimer = null;
+  }
+}
+
+function anyAssetUrlNearExpiry(assets: Asset[]): boolean {
+  for (const a of assets) {
+    if (a.url && isPresignedNearExpiry(a.url)) return true;
+    const proxy = a.metadata?.proxyUrl;
+    if (proxy && isPresignedNearExpiry(proxy)) return true;
+  }
+  return false;
+}
 
 function cloneTimeline(timeline: EditorStore["timeline"]): EditorStore["timeline"] {
   return structuredClone(timeline);
 }
 
 function recordEditHistory(get: () => EditorStore, set: (partial: Partial<EditorStore>) => void) {
+  if (agentTransactionActive) return;
   const snap = cloneTimeline(get().timeline);
   const past = get().editPast ?? [];
   set({
@@ -286,8 +361,31 @@ function recordEditHistory(get: () => EditorStore, set: (partial: Partial<Editor
 }
 
 function triggerAutosave(get: () => EditorStore, set: (partial: Partial<EditorStore>) => void) {
+  if (agentTransactionActive) return;
   const { setSaveStatus, setHistory } = persistHooks(get, set);
   scheduleAutosave(get, setSaveStatus, setHistory);
+}
+
+let agentTransactionActive = false;
+
+/** Apply a complete AI edit as one undo step, rolling back any failed operation. */
+export function runAgentTransaction<T>(apply: () => T): T {
+  endGestureHistory();
+  const before = useEditorStore.getState();
+  agentTransactionActive = true;
+  try {
+    const result = apply();
+    const changed = useEditorStore.getState().timeline !== before.timeline;
+    if (changed) useEditorStore.setState({ editPast: [...before.editPast.slice(-(MAX_EDIT_HISTORY - 1)), cloneTimeline(before.timeline)], editFuture: [] });
+    return result;
+  } catch (error) {
+    useEditorStore.setState({ timeline: before.timeline, assets: before.assets, ui: before.ui, editPast: before.editPast, editFuture: before.editFuture });
+    throw error;
+  } finally {
+    endGestureHistory();
+    agentTransactionActive = false;
+    triggerAutosave(useEditorStore.getState, useEditorStore.setState);
+  }
 }
 
 export function endGestureHistory() {
@@ -341,7 +439,7 @@ function resetUi(ui: EditorUIState): EditorUIState {
     playbackSpeed: ui.playbackSpeed ?? 1,
     toolPanelOpen: false,
     rightPanelOpen: false,
-    agentPanelOpen: true,
+    agentPanelOpen: false,
     agentMentionIds: [],
     agentBusy: false,
     replaceMediaOpen: false,
@@ -353,6 +451,7 @@ function resetUi(ui: EditorUIState): EditorUIState {
     resetConfirmOpen: false,
     saveStatus: "saved",
     lastRenderedDurationMs: ui.lastRenderedDurationMs ?? null,
+    proxyProgress: null,
   };
 }
 
@@ -376,7 +475,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     saveStatus: "saved",
     toolPanelOpen: false,
     rightPanelOpen: false,
-    agentPanelOpen: true,
+    agentPanelOpen: false,
     agentMentionIds: [],
     agentBusy: false,
     replaceMediaOpen: false,
@@ -387,10 +486,16 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     restoreDialogId: null,
     resetConfirmOpen: false,
     lastRenderedDurationMs: null,
+    proxyProgress: null,
   },
 
   init: async (projectId) => {
+    initAbort?.abort();
+    stopMediaUrlRefresh();
+    const ac = new AbortController();
+    initAbort = ac;
     const gen = ++initGeneration;
+    clearApiGetCache();
     resetAutosaveIdentity();
     set({
       ui: {
@@ -403,8 +508,11 @@ export const useEditorStore = create<EditorStore>((set, get) => {
       },
     });
     try {
-      const data = await loadEditorState(projectId);
-      if (gen !== initGeneration) return;
+      // The "Open editor" preloader may have already fetched this timeline.
+      const data =
+        takePreloadedEditorState(projectId) ??
+        (await loadEditorState(projectId, { signal: ac.signal }));
+      if (gen !== initGeneration || ac.signal.aborted) return;
       clearLocalEditHistory(set);
       set({
         ...data,
@@ -421,8 +529,41 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         },
       });
       markEditorFlushed(get());
+      // Lazy backfill: adopt existing proxies, derive the rest (non-blocking).
+      // Ordered by timeline position so the head of the video plays first.
+      const usedAssetIds = get()
+        .timeline.tracks.flatMap((t) => t.items)
+        .filter((item): item is ClipItem => item.type === "video" || item.type === "broll")
+        .sort((a, b) => a.startMs - b.startMs)
+        .map((item) => item.assetId);
+      void ensureVideoProxies({
+        projectId,
+        assets: orderAssetsByTimelineUse(get().assets, usedAssetIds),
+        signal: ac.signal,
+        onAsset: (assetId, patch) => get().patchAssetProxyMeta(assetId, patch),
+        onProgress: (ready, total) => {
+          if (gen !== initGeneration) return;
+          set({
+            ui: {
+              ...get().ui,
+              proxyProgress: ready >= total ? null : { ready, total },
+            },
+          });
+        },
+      });
+      // Refresh presigned mediaUrls before they expire (~1–4h) while the editor stays open.
+      mediaRefreshTimer = setInterval(() => {
+        if (gen !== initGeneration) {
+          stopMediaUrlRefresh();
+          return;
+        }
+        void get().refreshMediaUrls();
+      }, 20 * 60 * 1000);
     } catch (err) {
-      if (gen !== initGeneration) return;
+      if (gen !== initGeneration || ac.signal.aborted) return;
+      if (err && typeof err === "object" && (err as { name?: string }).name === "AbortError") {
+        return;
+      }
       const message = err instanceof Error ? err.message : "Failed to load editor";
       set({
         ui: {
@@ -434,6 +575,25 @@ export const useEditorStore = create<EditorStore>((set, get) => {
           projectStatus: isEditorLoadError(err) ? err.projectStatus : null,
         },
       });
+    }
+  },
+
+  refreshMediaUrls: async () => {
+    const projectId = get().project?.id;
+    if (!projectId || get().ui.loadStatus !== "ready") return;
+    if (mediaRefreshInFlight) return;
+    mediaRefreshInFlight = true;
+    try {
+      clearApiGetCache();
+      const timeline = await fetchProjectTimeline(projectId);
+      if (!timeline?.mediaUrls) return;
+      const assets = refreshAssetUrls(get().assets, timeline.mediaUrls);
+      const nextTimeline = refreshClipThumbnails(get().timeline, assets);
+      set({ assets, timeline: nextTimeline });
+    } catch (err) {
+      console.warn("[editor] mediaUrl refresh failed", err);
+    } finally {
+      mediaRefreshInFlight = false;
     }
   },
 
@@ -470,15 +630,20 @@ export const useEditorStore = create<EditorStore>((set, get) => {
           ms == null ? null : clamp(ms, 0, get().timeline.durationMs),
       },
     }),
-  setPlaying: (playing) =>
+  setPlaying: (playing) => {
+    if (playing && anyAssetUrlNearExpiry(get().assets)) {
+      void get().refreshMediaUrls();
+    }
     set({
       ui: {
         ...get().ui,
         isPlaying: playing,
+        playheadMs: playing && get().ui.playheadMs >= get().timeline.durationMs - 1000 / get().timeline.fps ? 0 : get().ui.playheadMs,
         // Scrub overlay must not fight the transport clock.
         previewScrubMs: playing ? null : get().ui.previewScrubMs,
       },
-    }),
+    });
+  },
   setPlaybackSpeed: (speed) =>
     set({ ui: { ...get().ui, playbackSpeed: clamp(speed, 0.25, 2) } }),
   setZoom: (zoom) => {
@@ -491,7 +656,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
   updateSettings: (patch) => {
     const keys = Object.keys(patch);
     const uiOnly = keys.every(
-      (k) => k === "zoom" || k === "snappingEnabled" || k === "previewMuted",
+      (k) => k === "zoom" || k === "snappingEnabled" || k === "previewMuted" || k === "previewVolume",
     );
     if (!uiOnly) recordEditHistory(get, set);
     const timeline = { ...get().timeline, settings: { ...get().timeline.settings, ...patch } };
@@ -548,6 +713,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
   setMediaSourceTab: (tab) => set({ ui: { ...get().ui, mediaSourceTab: tab } }),
 
   replaceMedia: (itemId, assetId) => {
+    if (findTrackForItem(get(), itemId)?.locked) return;
     const asset = get().assets.find((a) => a.id === assetId);
     if (!asset) return;
     recordEditHistory(get, set);
@@ -558,6 +724,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
           ? {
               ...item,
               assetId,
+              sourceStartMs: 0,
               label: asset.label,
               thumbnailUrl: asset.thumbnailUrl || asset.url,
               mediaType: asset.mediaType,
@@ -573,30 +740,62 @@ export const useEditorStore = create<EditorStore>((set, get) => {
   },
 
   addAssetFromUrl: (url, itemId, meta) => {
+    if (findTrackForItem(get(), itemId)?.locked) return;
     const trimmed = url.trim();
     if (!trimmed) return;
-    const assetId = `asset-url-${Date.now()}`;
-    const isVideo = /\.(mp4|webm|mov)(\?|$)/i.test(trimmed);
+    const assetId = generateShortId("asset-url-");
+    const isVideo = meta?.mediaType === "video" || /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(trimmed) || Boolean(meta?.proxyMeta?.proxyKey);
+    const metadata: Record<string, string> = { ...(meta?.metadata || {}) };
+    if (meta?.sourceKey) metadata.sourceKey = meta.sourceKey;
+    if (meta?.proxyMeta) Object.assign(metadata, meta.proxyMeta);
     const asset: Asset = {
       id: assetId,
-      sourceType: meta?.sourceKey ? "local" : "url",
+      sourceType: meta?.sourceType || (meta?.sourceKey ? "local" : "url"),
       mediaType: isVideo ? "video" : "image",
       label: meta?.label || "URL asset",
       url: trimmed,
-      thumbnailUrl: isVideo ? "" : trimmed,
-      metadata: meta?.sourceKey ? { sourceKey: meta.sourceKey } : undefined,
+      thumbnailUrl: isVideo ? meta?.proxyMeta?.posterUrl || "" : trimmed,
+      metadata: Object.keys(metadata).length ? metadata : undefined,
+      durationMs: meta?.durationMs,
     };
     set({ assets: [...get().assets, asset] });
     get().replaceMedia(itemId, assetId);
   },
 
+  patchAssetProxyMeta: (assetId, patch) => {
+    const assets = get().assets.map((a) =>
+      a.id === assetId ? applyProxyMetaToAsset(a, patch) : a,
+    );
+    const byId = new Map(assets.map((a) => [a.id, a]));
+    const tracks = get().timeline.tracks.map((track) => ({
+      ...track,
+      items: track.items.map((item) => {
+        if (!("assetId" in item) || item.assetId !== assetId) return item;
+        const asset = byId.get(assetId);
+        if (!asset || !("thumbnailUrl" in item)) return item;
+        const nextThumb = asset.thumbnailUrl || patch.posterUrl;
+        if (!nextThumb || item.thumbnailUrl === nextThumb) return item;
+        return { ...item, thumbnailUrl: nextThumb };
+      }),
+    }));
+    set({
+      assets,
+      timeline: { ...get().timeline, tracks },
+    });
+    // Persist proxy keys so reloads skip re-derive and mediaUrls can presign them.
+    get().markUnsaved();
+    triggerAutosave(get, set);
+  },
+
   moveItem: (itemId, startMs) => {
-    if (findTrackForItem(get(), itemId)?.locked) return;
-    get().beginGestureHistory();
+    const owner = findTrackForItem(get(), itemId);
     const prev = findItem(get(), itemId);
+    if (!prev || owner?.locked || !Number.isFinite(startMs)) return false;
     const duration = prev ? prev.endMs - prev.startMs : 0;
     const maxStart = get().timeline.durationMs - duration;
-    const clampedStart = clamp(startMs, 0, maxStart);
+    const clampedStart = clamp(startMs, 0, Math.max(0, maxStart));
+    if (owner?.type === "video" && findOverlappingClipIds(get().timeline.tracks, itemId, clampedStart, clampedStart + duration).length) return false;
+    get().beginGestureHistory();
     const deltaMs = prev ? clampedStart - prev.startMs : 0;
     const deltaSec = deltaMs / 1000;
     const tracks = get().timeline.tracks.map((track) => ({
@@ -628,10 +827,14 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     }));
     set({ timeline: { ...get().timeline, tracks } });
     // Autosave deferred to endGestureHistory while dragging.
+    return true;
   },
 
   trimItem: (itemId, startMs, endMs) => {
-    if (findTrackForItem(get(), itemId)?.locked) return;
+    const owner = findTrackForItem(get(), itemId);
+    if (!owner || owner.locked || !Number.isFinite(startMs) || !Number.isFinite(endMs) ||
+        startMs < 0 || endMs <= startMs || endMs > get().timeline.durationMs) return false;
+    if (owner.type === "video" && findOverlappingClipIds(get().timeline.tracks, itemId, startMs, endMs).length) return false;
     get().beginGestureHistory();
     const tracks = get().timeline.tracks.map((track) => ({
       ...track,
@@ -649,39 +852,53 @@ export const useEditorStore = create<EditorStore>((set, get) => {
           const prevSource = "sourceStartMs" in item ? (item.sourceStartMs ?? 0) : 0;
           return { ...next, sourceStartMs: Math.max(0, prevSource + deltaStart) };
         }
-        if (item.type === "captions" && item.words?.length && Math.abs(deltaStart) > 0) {
-          const dSec = deltaStart / 1000;
+        if (item.type === "captions" && item.words?.length) {
           const winStart = startMs / 1000;
           const winEnd = endMs / 1000;
           return {
             ...next,
-            words: item.words
-              .map((w) => ({ ...w, startSec: w.startSec + dSec }))
-              .filter((w) => w.startSec + w.durationSec > winStart && w.startSec < winEnd),
+            words: item.words.filter((w) => w.startSec + w.durationSec > winStart && w.startSec < winEnd),
           };
         }
         return next;
       }),
     }));
-    set({ timeline: { ...get().timeline, tracks } });
+    set({ timeline: timelineWithDuration({ ...get().timeline, tracks }, endMs) });
     // Autosave deferred to endGestureHistory while trimming.
+    return true;
   },
 
   updateTextItem: (itemId, patch) => {
+    if (findTrackForItem(get(), itemId)?.locked) return;
+    patch = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
+    const editingCaption = findItem(get(), itemId)?.type === "captions";
+    const { text: _captionText, label: _captionLabel, ...sharedCaptionPatch } = patch;
     armTextEditHistory(get, set);
     const tracks = get().timeline.tracks.map((track) => ({
       ...track,
-      items: track.items.map((item) =>
-        item.id === itemId && (item.type === "text" || item.type === "captions")
-          ? { ...item, ...patch }
-          : item,
-      ),
+      items: track.items.map((item) => {
+        if (editingCaption && item.type === "captions") {
+          if (item.id === itemId) {
+            return {
+              ...item,
+              ...patch,
+              ...(patch.text !== undefined && patch.text !== item.text ? { words: undefined } : {}),
+            };
+          }
+          return { ...item, ...sharedCaptionPatch };
+        }
+        return item.id === itemId && item.type === "text"
+          ? { ...item, ...patch, ...(patch.text !== undefined && patch.text !== item.text ? { words: undefined } : {}) }
+          : item;
+      }),
     }));
     set({ timeline: { ...get().timeline, tracks } });
     triggerAutosave(get, set);
   },
 
   updateAnimationItem: (itemId, patch) => {
+    if (findTrackForItem(get(), itemId)?.locked) return;
+    patch = Object.fromEntries(Object.entries(patch).filter(([, value]) => value !== undefined));
     armTextEditHistory(get, set);
     const tracks = get().timeline.tracks.map((track) => ({
       ...track,
@@ -695,9 +912,16 @@ export const useEditorStore = create<EditorStore>((set, get) => {
 
   updateTextPosition: (itemId, x, y) => {
     armTextEditHistory(get, set);
+    const movingCaption = findItem(get(), itemId)?.type === "captions";
     const tracks = get().timeline.tracks.map((track) => ({
       ...track,
       items: track.items.map((item) => {
+        // Captions are a project-wide subtitle lane. Moving one cue changes the
+        // shared caption layout, so every cue must receive its own transform.
+        if (movingCaption && item.type === "captions") {
+          const transform = resolveTransform(item.transform, { x, y });
+          return { ...item, position: { x, y }, transform: { ...transform, x, y } };
+        }
         if (item.id !== itemId) return item;
         if (item.type === "text" || item.type === "captions" || item.type === "animation") {
           const transform = resolveTransform(item.transform, { x, y });
@@ -715,11 +939,22 @@ export const useEditorStore = create<EditorStore>((set, get) => {
   },
 
   updateItemTransform: (itemId, transform) => {
+    if (findTrackForItem(get(), itemId)?.locked) return;
     get().beginGestureHistory();
     const next = resolveTransform(transform);
+    const movingCaption = findItem(get(), itemId)?.type === "captions";
     const tracks = get().timeline.tracks.map((track) => ({
       ...track,
       items: track.items.map((item) => {
+        // Keep all subtitle cues aligned when a caption is transformed in the
+        // canvas. Clone the object for each cue to avoid shared-reference bugs.
+        if (movingCaption && item.type === "captions") {
+          return {
+            ...item,
+            transform: { ...next },
+            position: { x: next.x, y: next.y },
+          };
+        }
         if (item.id !== itemId) return item;
         if (item.type === "video" || item.type === "broll") {
           return { ...item, transform: { ...next } };
@@ -771,11 +1006,13 @@ export const useEditorStore = create<EditorStore>((set, get) => {
   },
 
   updateItemAnimation: (itemId, animation) => {
+    if (findTrackForItem(get(), itemId)?.locked) return;
     recordEditHistory(get, set);
     const tracks = get().timeline.tracks.map((track) => ({
       ...track,
       items: track.items.map((item) => {
-        if (item.id !== itemId) return item;
+        const editingCaption = findItem(get(), itemId)?.type === "captions";
+        if (item.id !== itemId && !(editingCaption && item.type === "captions")) return item;
         if (
           item.type === "video" ||
           item.type === "broll" ||
@@ -795,6 +1032,9 @@ export const useEditorStore = create<EditorStore>((set, get) => {
   toggleCaptions: (enabled) => get().updateSettings({ captionsEnabled: enabled }),
 
   setTransition: (transitionId, type, durationMs) => {
+    const existing = get().timeline.transitions.find(t => t.id === transitionId);
+    if (!existing || findTrackForItem(get(), existing.afterItemId)?.locked ||
+        (durationMs != null && (!Number.isFinite(durationMs) || durationMs < 0))) return;
     recordEditHistory(get, set);
     const transitions = get().timeline.transitions.map((t) =>
       t.id === transitionId
@@ -802,6 +1042,13 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         : t,
     );
     set({ timeline: { ...get().timeline, transitions } });
+    triggerAutosave(get, set);
+  },
+
+  setTransitionSound: (transitionId, enabled) => {
+    if (!get().timeline.transitions.some((transition) => transition.id === transitionId)) return;
+    recordEditHistory(get, set);
+    set({ timeline: { ...get().timeline, transitions: get().timeline.transitions.map((transition) => transition.id === transitionId ? { ...transition, sfxMuted: !enabled } : transition) } });
     triggerAutosave(get, set);
   },
 
@@ -858,6 +1105,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
   },
 
   deleteItem: (itemId) => {
+    if (findTrackForItem(get(), itemId)?.locked) return false;
     const item = findItem(get(), itemId);
     if (!item) return false;
     recordEditHistory(get, set);
@@ -878,6 +1126,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
   },
 
   duplicateItem: (itemId) => {
+    if (findTrackForItem(get(), itemId)?.locked) return null;
     const state = get();
     let source: (typeof state.timeline.tracks)[number]["items"][number] | null = null;
     let trackId: string | null = null;
@@ -916,6 +1165,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
   },
 
   splitItem: (itemId, atMs) => {
+    if (!Number.isFinite(atMs) || findTrackForItem(get(), itemId)?.locked) return null;
     const state = get();
     let source: TimelineItem | null = null;
     let trackId: string | null = null;
@@ -950,8 +1200,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         right.type === "broll" ||
         right.type === "narration" ||
         right.type === "music" ||
-        right.type === "sfx") &&
-      "sourceStartMs" in right
+        right.type === "sfx")
     ) {
       const prevSource = right.sourceStartMs ?? 0;
       right.sourceStartMs = Math.max(0, prevSource + (rightStart - source.startMs));
@@ -994,7 +1243,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
 
   bringItemToFront: (itemId) => {
     const state = get();
-    let maxZ = 0;
+    let maxZ = 25;
     for (const track of state.timeline.tracks) {
       for (const item of track.items) {
         if ("transform" in item && item.transform) {
@@ -1003,9 +1252,9 @@ export const useEditorStore = create<EditorStore>((set, get) => {
       }
     }
     const item = findItem(state, itemId);
-    if (!item || !("transform" in item)) return;
+    if (!item || item.type === "narration" || item.type === "music" || item.type === "sfx") return;
     const t = resolveTransform(
-      item.transform,
+      "transform" in item ? item.transform : undefined,
       "position" in item ? item.position : undefined,
     );
     get().updateItemTransform(itemId, { ...t, zIndex: maxZ + 1 });
@@ -1022,9 +1271,9 @@ export const useEditorStore = create<EditorStore>((set, get) => {
       }
     }
     const item = findItem(state, itemId);
-    if (!item || !("transform" in item)) return;
+    if (!item || item.type === "narration" || item.type === "music" || item.type === "sfx") return;
     const t = resolveTransform(
-      item.transform,
+      "transform" in item ? item.transform : undefined,
       "position" in item ? item.position : undefined,
     );
     get().updateItemTransform(itemId, { ...t, zIndex: minZ - 1 });
@@ -1094,7 +1343,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
 
   clearTrackItems: (trackId) => {
     const track = get().timeline.tracks.find((t) => t.id === trackId);
-    if (!track || track.items.length === 0) return;
+    if (!track || track.locked || track.items.length === 0) return;
     recordEditHistory(get, set);
     const removedIds = new Set(track.items.map((i) => i.id));
     const tracks = get().timeline.tracks.map((t) =>
@@ -1116,7 +1365,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     recordEditHistory(get, set);
     const start = startMs ?? get().ui.playheadMs;
     const newItem = {
-      id: `cap-${Date.now()}`,
+      id: generateShortId("cap-"),
       type: "captions" as const,
       startMs: start,
       endMs: start + Math.max(500, durationMs),
@@ -1145,7 +1394,8 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     recordEditHistory(get, set);
     const start = opts.startMs ?? get().ui.playheadMs;
     const duration = opts.durationMs ?? 15000;
-    const assetId = `asset-music-${Date.now()}`;
+    const assetId = generateShortId("asset-music-");
+    const sourceKey = opts.sourceKey ?? get().assets.find((asset) => asset.url === opts.url)?.metadata?.sourceKey;
     const asset: Asset = {
       id: assetId,
       sourceType: opts.url ? "url" : "local",
@@ -1154,9 +1404,10 @@ export const useEditorStore = create<EditorStore>((set, get) => {
       url: opts.url || "",
       thumbnailUrl: "",
       durationMs: duration,
+      metadata: sourceKey ? { sourceKey } : undefined,
     };
     const newItem = {
-      id: `music-${Date.now()}`,
+      id: generateShortId("music-"),
       type: "music" as const,
       startMs: start,
       endMs: start + duration,
@@ -1180,10 +1431,14 @@ export const useEditorStore = create<EditorStore>((set, get) => {
   },
 
   addSfx: (opts = {}) => {
+    if (get().timeline.tracks.some(t => t.type === "sfx" && t.locked)) return "";
+    if ((opts.durationMs != null && (!Number.isFinite(opts.durationMs) || opts.durationMs <= 0)) ||
+      (opts.startMs != null && (!Number.isFinite(opts.startMs) || opts.startMs < 0))) return "";
     recordEditHistory(get, set);
     const start = opts.startMs ?? get().ui.playheadMs;
     const duration = opts.durationMs ?? 800;
-    const assetId = `asset-sfx-${Date.now()}`;
+    const assetId = generateShortId("asset-sfx-");
+    const sourceKey = opts.sourceKey ?? get().assets.find((asset) => asset.url === opts.url)?.metadata?.sourceKey;
     const asset: Asset = {
       id: assetId,
       sourceType: opts.url ? "url" : "local",
@@ -1192,9 +1447,10 @@ export const useEditorStore = create<EditorStore>((set, get) => {
       url: opts.url || "",
       thumbnailUrl: "",
       durationMs: duration,
+      metadata: sourceKey ? { sourceKey } : undefined,
     };
     const newItem = {
-      id: `sfx-${Date.now()}`,
+      id: generateShortId("sfx-"),
       type: "sfx" as const,
       startMs: start,
       endMs: start + duration,
@@ -1202,12 +1458,16 @@ export const useEditorStore = create<EditorStore>((set, get) => {
       assetId,
       volume: opts.volume ?? 60,
       fadeIn: 0,
-      fadeOut: 200,
+      fadeOut: Math.min(100, duration / 3),
       hidden: false,
     };
     const tracks = get().timeline.tracks.map((track) =>
       track.type === "sfx" ? { ...track, items: [...track.items, newItem] } : track,
     );
+    if (!tracks.some(t => t.type === "sfx")) tracks.push({
+      id: generateShortId("track-sfx-"), type: "sfx", label: "Sound effects",
+      locked: false, hidden: false, items: [newItem],
+    });
     set({
       assets: [...get().assets, asset],
       timeline: timelineWithDuration({ ...get().timeline, tracks }, newItem.endMs),
@@ -1224,28 +1484,36 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     const url =
       opts.url ||
       "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=1920&h=1080&q=80";
-    const assetId = `asset-broll-${Date.now()}`;
+    const mediaType = opts.mediaType ?? (/\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(url) ? "video" : "image");
+    const assetId = generateShortId("asset-broll-");
+    const metadata: Record<string, string> = { ...(opts.metadata || {}) };
+    if (opts.sourceKey) metadata.sourceKey = opts.sourceKey;
+    const thumb =
+      opts.thumbnailUrl ||
+      metadata.posterUrl ||
+      (mediaType === "image" ? url : "");
     const asset: Asset = {
       id: assetId,
       sourceType: opts.sourceType || (opts.sourceKey ? "local" : "url"),
-      mediaType: "image",
+      mediaType,
       label: opts.label || "B-roll",
       url,
-      thumbnailUrl: url,
+      thumbnailUrl: thumb,
       durationMs: duration,
-      metadata: opts.sourceKey ? { sourceKey: opts.sourceKey } : undefined,
+      metadata: Object.keys(metadata).length ? metadata : undefined,
     };
     const newItem = {
-      id: `broll-${Date.now()}`,
+      id: generateShortId("broll-"),
       type: "broll" as const,
+      sourceStartMs: 0,
       startMs: start,
       endMs: start + duration,
       label: opts.label || "B-roll",
-      mediaType: "image" as const,
+      mediaType,
       assetId,
       fitMode: "cover" as const,
-      muted: true,
-      thumbnailUrl: url,
+      muted: mediaType !== "video",
+      thumbnailUrl: thumb || undefined,
       hidden: false,
     };
     const tracks = get().timeline.tracks.map((track) =>
@@ -1261,6 +1529,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
   },
 
   toggleItemHidden: (itemId) => {
+    if (findTrackForItem(get(), itemId)?.locked) return;
     recordEditHistory(get, set);
     const tracks = get().timeline.tracks.map((track) => ({
       ...track,
@@ -1271,6 +1540,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
   },
 
   updateClipFitMode: (itemId, fitMode) => {
+    if (findTrackForItem(get(), itemId)?.locked) return;
     recordEditHistory(get, set);
     const tracks = get().timeline.tracks.map((track) => ({
       ...track,
@@ -1297,8 +1567,40 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     set({ timeline: { ...get().timeline, tracks } });
     triggerAutosave(get, set);
   },
+  updateClipEffects: (itemId, patch) => {
+    if (findTrackForItem(get(), itemId)?.locked) return;
+    armTextEditHistory(get, set);
+    const tracks = get().timeline.tracks.map(track => ({ ...track, items: track.items.map(item => item.id === itemId && (item.type === "video" || item.type === "broll") ? { ...item, visualEffects: { ...item.visualEffects, ...patch } } : item) }));
+    set({ timeline: { ...get().timeline, tracks } });
+    triggerAutosave(get, set);
+  },
+  updateClipThreeScene: (itemId, scene) => {
+    const track = findTrackForItem(get(), itemId);
+    if (!track || !["video", "broll"].includes(track.type) || track.locked) return;
+    const parsed = scene == null ? null : threeSceneSchema.parse(scene);
+    recordEditHistory(get, set);
+    const tracks = get().timeline.tracks.map(row => ({ ...row, items: row.items.map(item =>
+      item.id === itemId && (item.type === "video" || item.type === "broll")
+        ? { ...item, threeScene: parsed ?? undefined, ...(parsed ? { motionTemplate: undefined, muted: true } : {}) } : item) }));
+    set({ timeline: { ...get().timeline, tracks } });
+    triggerAutosave(get, set);
+  },
+  updateClipMotionTemplate: (itemId, template) => {
+    const track = findTrackForItem(get(), itemId);
+    if (!track || track.type !== "video" || track.locked) return;
+    recordEditHistory(get, set);
+    const tracks = get().timeline.tracks.map((row) => ({
+      ...row,
+      items: row.items.map((item) => item.id === itemId && item.type === "video"
+        ? { ...item, motionTemplate: template ?? undefined, threeScene: undefined }
+        : item),
+    }));
+    set({ timeline: { ...get().timeline, tracks } });
+    triggerAutosave(get, set);
+  },
 
   updateAudioVolume: (itemId, volume) => {
+    if (findTrackForItem(get(), itemId)?.locked) return;
     recordEditHistory(get, set);
     const tracks = get().timeline.tracks.map((track) => ({
       ...track,
@@ -1314,6 +1616,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
   },
 
   updateAudioFades: (itemId, fadeInMs, fadeOutMs) => {
+    if (findTrackForItem(get(), itemId)?.locked) return;
     recordEditHistory(get, set);
     const fadeIn = Math.max(0, Math.round(fadeInMs));
     const fadeOut = Math.max(0, Math.round(fadeOutMs));
@@ -1334,7 +1637,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     recordEditHistory(get, set);
     const playhead = get().ui.playheadMs;
     const newItem = {
-      id: `txt-${Date.now()}`,
+      id: generateShortId("txt-"),
       type: "text" as const,
       startMs: playhead,
       endMs: playhead + 5000,
@@ -1384,24 +1687,29 @@ export const useEditorStore = create<EditorStore>((set, get) => {
 
   addAnimation: (preset, startMs) => {
     recordEditHistory(get, set);
+    const meta = getTemplateMeta(preset);
     const isCta = preset === "subscribe-cta";
     const isChapter = preset === "chapter-title" || preset === "lower-third";
+    const isGraphic = Boolean(meta && isMotionGraphicManifestType(meta.manifestType));
     const pos = isCta
       ? { x: 85, y: 12 }
       : preset === "lower-third"
         ? { x: 22, y: 82 }
         : isChapter
           ? { x: 50, y: 40 }
-          : { x: 50, y: 50 };
+          : { x: 50, y: 48 };
+    const durationMs = isCta ? 5000 : isGraphic ? 5500 : 4000;
     const newItem = {
-      id: `anim-${Date.now()}`,
+      id: generateShortId("anim-"),
       type: "animation" as const,
       startMs,
-      endMs: startMs + (isCta ? 5000 : 4000),
-        label: isCta ? "Subscribe CTA" : preset === "lower-third" ? "Lower third" : isChapter ? "Chapter" : preset,
+      endMs: startMs + durationMs,
+      label: meta?.label || (isCta ? "Subscribe CTA" : isChapter ? "Chapter" : preset),
       preset,
       intensity: isCta ? 80 : 70,
-      boxWidthPct: isChapter ? 70 : undefined,
+      boxWidthPct: isChapter ? 70 : isGraphic ? 72 : undefined,
+      title: isGraphic ? meta?.label : undefined,
+      slots: isGraphic ? defaultSlotsForTemplate(preset as TemplateId) : undefined,
       position: pos,
       transform: {
         x: pos.x,
@@ -1409,7 +1717,7 @@ export const useEditorStore = create<EditorStore>((set, get) => {
         scaleX: 1,
         scaleY: 1,
         rotation: 0,
-        zIndex: 5,
+        zIndex: isGraphic ? 25 : 5,
       },
       hidden: false,
     };
@@ -1422,6 +1730,44 @@ export const useEditorStore = create<EditorStore>((set, get) => {
     });
     triggerAutosave(get, set);
     return newItem.id;
+  },
+
+  addGraphic: (graphic) => {
+    recordEditHistory(get, set);
+    const id = `graphic-${generateShortId()}`;
+    const startMs = Math.max(0, Math.round(graphic.start_sec * 1000));
+    const endMs = startMs + Math.max(1, Math.round(graphic.duration_sec * 1000));
+    const transform = resolveTransform(graphic.transform);
+    const newItem = {
+      id, type: "animation" as const, startMs, endMs,
+      label: graphic.text || (graphic.type === "bar_chart" ? "Bar chart" : graphic.type === "frame" ? "Moving frame" : "Shape"),
+      preset: `graphic-${graphic.type}`, intensity: 70,
+      position: { x: transform.x, y: transform.y }, transform,
+      graphic: { ...graphic, id }, hidden: false,
+    };
+    const tracks = get().timeline.tracks.map((track) =>
+      track.type === "animation" ? { ...track, items: [...track.items, newItem] } : track,
+    );
+    set({ timeline: timelineWithDuration({ ...get().timeline, tracks }, endMs),
+      ui: { ...get().ui, selectedItemId: id, activeTool: "animations" } });
+    triggerAutosave(get, set);
+    return id;
+  },
+
+  updateGraphic: (itemId, patch) => {
+    if (findTrackForItem(get(), itemId)?.locked) return;
+    const existing = findItem(get(), itemId);
+    if (!existing || existing.type !== "animation" || !existing.graphic) return;
+    armTextEditHistory(get, set);
+    const tracks = get().timeline.tracks.map((track) => ({ ...track,
+      items: track.items.map((item) => item.id === itemId && item.type === "animation" && item.graphic
+        ? { ...item, label: patch.text ?? item.label,
+            ...(patch.transform ? { transform: resolveTransform({ ...item.transform, ...patch.transform }), position: { x: patch.transform.x ?? item.position.x, y: patch.transform.y ?? item.position.y } } : {}),
+            graphic: { ...item.graphic, ...patch, id: item.id } }
+        : item),
+    }));
+    set({ timeline: { ...get().timeline, tracks } });
+    if (!gestureHistoryArmed) triggerAutosave(get, set);
   },
 
   setRestoreDialogId: (id) => set({ ui: { ...get().ui, restoreDialogId: id } }),

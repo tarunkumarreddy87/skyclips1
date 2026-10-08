@@ -12,9 +12,12 @@ dependencies = [
     "alembic>=1.14.0",
     "redis>=5.2.0",
     "hanuman-shared-types",
+    "hanuman-timeline-schema",
     "boto3>=1.35.0",
     "temporalio>=1.8.0",
     "httpx>=0.28.0",
+    "pyjwt[crypto]>=2.9.0",
+    "rembg[cpu]>=2.0.67",
 ]
 
 [project.optional-dependencies]
@@ -25,6 +28,7 @@ dev = [
 
 [tool.uv.sources]
 hanuman-shared-types = { path = "../../packages/shared-types/python", editable = true }
+hanuman-timeline-schema = { path = "../../packages/timeline-schema/python", editable = true }
 
 [build-system]
 requires = ["hatchling"]

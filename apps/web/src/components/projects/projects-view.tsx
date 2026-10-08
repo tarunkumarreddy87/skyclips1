@@ -9,7 +9,6 @@ import {
   Loader2,
   Plus,
   Search,
-  Sparkles,
   Video,
 } from "lucide-react";
 import type { Project } from "@hanuman/shared-types";
@@ -24,11 +23,7 @@ import { Input } from "@/components/ui/input";
 
 type ListItem = Project & { prompt?: string };
 
-function creditHint(status: string): number {
-  if (status === "completed") return 42;
-  if (status === "running" || status === "queued") return 28;
-  return 12;
-}
+
 
 export function ProjectsView() {
   const [query, setQuery] = useState("");
@@ -36,10 +31,15 @@ export function ProjectsView() {
   const [projects, setProjects] = useState<ListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [retry, setRetry] = useState(0);
   const useMock = useMockProjectsList();
 
   useEffect(() => {
+    setLoading(true);
+    setError(null);
     let cancelled = false;
+    const ac = new AbortController();
+    const timeout = window.setTimeout(() => ac.abort(), 20_000);
     (async () => {
       if (useMock) {
         setProjects(
@@ -64,22 +64,36 @@ export function ProjectsView() {
         return;
       }
       try {
-        const result = await listProjects();
+        const result = await listProjects(ac.signal);
         if (!cancelled) setProjects(result.items);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load projects");
+        if (!cancelled) {
+          const aborted =
+            (e && typeof e === "object" && (e as { name?: string }).name === "AbortError") ||
+            ac.signal.aborted;
+          setError(
+            aborted
+              ? "API timed out loading projects. Retry in a moment."
+              : e instanceof Error
+                ? e.message
+                : "Failed to load projects",
+          );
+        }
       } finally {
+        window.clearTimeout(timeout);
         if (!cancelled) setLoading(false);
       }
     })();
     return () => {
       cancelled = true;
+      window.clearTimeout(timeout);
+      ac.abort();
     };
-  }, [useMock]);
+  }, [useMock, retry]);
 
   const filtered = useMemo(() => {
-    const q = query.toLowerCase();
-    return projects
+    const q = query.trim().toLowerCase();
+    return Array.from(new Map(projects.map(p => [p.id, p])).values())
       .filter(
         (p) =>
           p.title.toLowerCase().includes(q) ||
@@ -111,7 +125,7 @@ export function ProjectsView() {
           </div>
           <Button
             render={<Link href="/studio" />}
-            className="gap-1.5 rounded-full border border-border/70 bg-card px-4 shadow-sm hover:bg-accent"
+            className="gap-1.5 rounded-full bg-blue-600 px-4 text-white shadow-sm hover:bg-blue-500"
           >
             <Plus className="size-4" />
             New video
@@ -157,11 +171,11 @@ export function ProjectsView() {
           </div>
         )}
 
-        {error && <p className="text-sm text-destructive">{error}</p>}
+        {error && <div role="alert" className="flex items-center gap-3 rounded-xl border border-destructive/25 p-4 text-sm text-destructive">{error}<Button variant="outline" onClick={() => setRetry(n => n + 1)}>Retry</Button></div>}
 
         {!loading && !error && filtered.length === 0 && (
           <div className="rounded-2xl border border-dashed border-border/70 bg-card/40 px-6 py-16 text-center">
-            <p className="font-display text-lg font-medium">No projects yet</p>
+            <p className="font-display text-lg font-medium">{query.trim() ? "No matching projects" : "No projects yet"}</p>
             <p className="mt-1 text-sm text-muted-foreground">
               Create your first video from the studio home.
             </p>
@@ -176,7 +190,6 @@ export function ProjectsView() {
             {filtered.map((project) => {
               const thumbnail = projectThumbnailUrl(project.id, project.formatMode);
               const href = projectHref(project.status, project.id);
-              const credits = creditHint(project.status);
 
               return (
                 <li key={project.id}>
@@ -212,10 +225,7 @@ export function ProjectsView() {
 
                     <StatusBadge status={project.status} compact />
 
-                    <span className="hidden shrink-0 items-center gap-1 rounded-full border border-border/70 bg-card px-2.5 py-1 text-[11px] font-medium text-muted-foreground sm:inline-flex">
-                      <Sparkles className="size-3 text-amber-400/80" />
-                      {credits}
-                    </span>
+                    
 
                     <ArrowUpRight className="size-4 shrink-0 text-muted-foreground/50 transition-colors group-hover:text-foreground" />
                   </Link>

@@ -9,9 +9,14 @@ const NUDGE_FINE_MS = 33;
 export function useEditorKeyboard() {
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.repeat) return;
-      const target = e.target as HTMLElement;
-      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+      if (e.repeat || e.defaultPrevented || e.isComposing) return;
+      // Expanded player owns transport keys; editing shortcuts must not delete content.
+      if (document.querySelector('[data-preview-player="expanded"]')) return;
+      const target = e.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.isContentEditable || target.closest(
+        'input, textarea, select, button, a, [role="textbox"], [role="combobox"], [role="slider"], [role="menu"], [role="listbox"], [role="dialog"], [role="alertdialog"]',
+      )) return;
 
       const mod = e.ctrlKey || e.metaKey;
       const store = useEditorStore.getState();

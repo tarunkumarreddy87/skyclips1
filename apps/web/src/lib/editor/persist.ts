@@ -5,7 +5,7 @@ import {
   type TimelineSnapshotMeta,
 } from "@/lib/api-client";
 import { buildTimelineManifestV1FromEditorState } from "./build-timeline-manifest";
-import { isEditorDocument, metaToHistory } from "./load-editor-state";
+import { isEditorDocument, metaToHistory, refreshAssetUrls, refreshClipThumbnails } from "./load-editor-state";
 import { mapTimelineResponseToEditorState } from "./manifest-mapper";
 import { withRefreshedCaptionWordClocks } from "./caption-groups";
 import type { EditorState, HistorySnapshot } from "./types";
@@ -40,6 +40,8 @@ export function editorContentFingerprint(state: EditorState): string {
     label: a.label,
     mediaType: a.mediaType,
     sourceKey: a.metadata?.sourceKey ?? null,
+    proxyKey: a.metadata?.proxyKey ?? null,
+    posterKey: a.metadata?.posterKey ?? null,
     durationMs: a.durationMs ?? null,
   }));
   return JSON.stringify({
@@ -183,33 +185,10 @@ async function hydrateFromRestore(
   const history = applyHistory(res.history);
 
   if (isEditorDocument(res.editorDocument)) {
-    const assets = res.editorDocument.assets.map((asset) => {
-      const key = asset.metadata?.sourceKey;
-      if (key && res.mediaUrls[key]) {
-        const url = res.mediaUrls[key];
-        return {
-          ...asset,
-          url,
-          thumbnailUrl: asset.mediaType === "image" ? url : asset.thumbnailUrl,
-        };
-      }
-      return asset;
-    });
-    const byId = new Map(assets.map((a) => [a.id, a]));
-    const timeline = withRefreshedCaptionWordClocks({
-      ...res.editorDocument.timeline,
-      tracks: res.editorDocument.timeline.tracks.map((track) => ({
-        ...track,
-        items: track.items.map((item) => {
-          if (!("assetId" in item) || !item.assetId || !("thumbnailUrl" in item)) return item;
-          const asset = byId.get(item.assetId);
-          if (!asset || asset.mediaType !== "image") return item;
-          const nextThumb = asset.thumbnailUrl || asset.url;
-          if (!nextThumb || item.thumbnailUrl === nextThumb) return item;
-          return { ...item, thumbnailUrl: nextThumb };
-        }),
-      })),
-    });
+    const assets = refreshAssetUrls(res.editorDocument.assets, res.mediaUrls);
+    const timeline = withRefreshedCaptionWordClocks(refreshClipThumbnails(
+      res.editorDocument.timeline, assets, res.editorDocument.assets, res.mediaUrls,
+    ));
     const state = {
       project: { ...res.editorDocument.project, id: projectId },
       timeline,

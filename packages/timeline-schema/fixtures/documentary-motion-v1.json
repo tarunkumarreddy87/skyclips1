@@ -119,6 +119,29 @@
         "in": { "preset": "drop", "duration_sec": 0.6 },
         "out": { "preset": "fade", "duration_sec": 0.4 }
       }
+    },
+    {
+      "id": "ov-bar-chart",
+      "type": "vertical_bar_chart",
+      "title": "Monthly Performance",
+      "subtitle": "Demo fixture",
+      "slots": [
+        { "label": "Jan", "value": 42, "color": "#60a5fa" },
+        { "label": "Feb", "value": 68, "color": "#34d399" },
+        { "label": "Mar", "value": 55, "color": "#fbbf24" }
+      ],
+      "start_sec": 9.0,
+      "duration_sec": 4.0,
+      "transform": { "x": 50, "y": 48, "scaleX": 1, "scaleY": 1, "rotation": 0, "zIndex": 25 },
+      "theme_id": "modern"
+    },
+    {
+      "id": "ov-quote",
+      "type": "highlight_quote",
+      "title": "The story turns here.",
+      "start_sec": 18.0,
+      "duration_sec": 3.5,
+      "transform": { "x": 50, "y": 50, "scaleX": 1, "scaleY": 1, "rotation": 0, "zIndex": 25 }
     }
   ],
   "settings": {

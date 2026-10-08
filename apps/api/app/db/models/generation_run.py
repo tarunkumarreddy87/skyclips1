@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -11,6 +11,15 @@ from app.db.models.enums import GenerationRunStatus
 
 class GenerationRun(Base):
     __tablename__ = "generation_runs"
+    __table_args__ = (
+        Index(
+            "uq_generation_runs_one_active_per_project",
+            "project_id",
+            unique=True,
+            postgresql_where=text("status IN ('QUEUED', 'RUNNING', 'queued', 'running')"),
+            sqlite_where=text("status IN ('QUEUED', 'RUNNING', 'queued', 'running')"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("projects.id"), nullable=False)
@@ -23,6 +32,7 @@ class GenerationRun(Base):
     )
     current_stage: Mapped[str | None] = mapped_column(String(128), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    credit_charged_amount: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

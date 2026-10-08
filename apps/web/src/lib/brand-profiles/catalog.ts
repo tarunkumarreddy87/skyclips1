@@ -169,19 +169,23 @@ export const THEME_CARDS: Array<{
   },
 ];
 
+/** Labels for brand blocklist UI — keep in sync with MOTION_TEMPLATE_CATALOG labels. */
 export const MOTION_TEMPLATES = [
-  "Youtube Comments Pop",
-  "World Map Image Highlight",
-  "World Map",
-  "Website Screen Shot",
+  "Editorial title",
+  "Data story",
+  "Archive timeline",
+  "Newspaper explainer",
   "Vertical Bar Chart",
-  "Two Image One Title",
-  "Two Choice Portrait",
-  "Twitter Post",
-  "Travel Map",
+  "Line Chart",
+  "Before / After Split",
+  "News Highlight",
+  "Doc Callout",
+  "Highlight Quote",
   "Subscribe CTA",
   "Chapter Title",
   "Lower Third",
+  "Ken Burns reveal",
+  "Parallax pan",
 ] as const;
 
 export const TRANSITION_TEMPLATES = [

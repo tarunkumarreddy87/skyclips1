@@ -1,39 +1,43 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getSessionCookie } from "better-auth/cookies";
+import { NextResponse, type NextRequest } from "next/server";
+import { isSupabaseAuthConfigured } from "@/lib/supabase/env";
+import { updateSession } from "@/lib/supabase/middleware";
+import { isProtectedRoute, safeAuthReturnPath } from "@/lib/auth-routes";
+import { appOrigin } from "@/lib/app-origin";
 
-const authEnforced = Boolean(process.env.MONGODB_URI);
-
-/** Soft gate when Atlas is configured; otherwise local/dev stays open. */
-export function middleware(request: NextRequest) {
-  if (!authEnforced) {
+/** Private application routes fail closed when authentication is unavailable. */
+export async function middleware(request: NextRequest) {
+  const origin = appOrigin(request.url);
+  if (!isSupabaseAuthConfigured()) {
+    if (isProtectedRoute(request.nextUrl.pathname)) {
+      return NextResponse.redirect(new URL("/sign-in", origin));
+    }
     return NextResponse.next();
   }
 
-  const session = getSessionCookie(request);
+  const { response, user } = await updateSession(request);
   const { pathname } = request.nextUrl;
 
   const isAuthPage = pathname.startsWith("/sign-in") || pathname.startsWith("/sign-up");
-  const isProtected =
-    pathname.startsWith("/studio") ||
-    pathname.startsWith("/projects") ||
-    pathname.startsWith("/settings") ||
-    pathname.startsWith("/create");
+  const isProtected = isProtectedRoute(pathname);
+  const redirectWithSession = (url: URL) => {
+    const redirect = NextResponse.redirect(url);
+    for (const cookie of response.cookies.getAll()) redirect.cookies.set(cookie);
+    redirect.headers.set("Cache-Control", "private, no-store");
+    return redirect;
+  };
 
-  if (!session && isProtected) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/sign-in";
-    url.searchParams.set("next", pathname);
-    return NextResponse.redirect(url);
+  if (!user && isProtected) {
+    const url = new URL("/sign-in", origin);
+    url.searchParams.set("next", pathname + request.nextUrl.search);
+    return redirectWithSession(url);
   }
 
-  if (session && isAuthPage) {
-    const url = request.nextUrl.clone();
-    url.pathname = "/studio";
-    url.search = "";
-    return NextResponse.redirect(url);
+  if (user && isAuthPage) {
+    return redirectWithSession(new URL(safeAuthReturnPath(request.nextUrl.searchParams.get("next")), origin));
   }
 
-  return NextResponse.next();
+  response.headers.set("Cache-Control", "private, no-store");
+  return response;
 }
 
 export const config = {
@@ -42,6 +46,10 @@ export const config = {
     "/projects/:path*",
     "/settings/:path*",
     "/create/:path*",
+    "/brand-profiles/:path*",
+    "/schedule/:path*",
+    "/feedback/:path*",
+    "/docs/:path*",
     "/sign-in",
     "/sign-up",
   ],

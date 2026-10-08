@@ -17,7 +17,7 @@ export function HistoryPanel() {
       </p>
       <p className="mb-3 text-[10px] leading-relaxed text-zinc-600">
         <span className="font-medium text-zinc-400">Render video</span> exports the{" "}
-        <span className="text-zinc-400">live editor</span> via Remotion (after flush) — not whichever
+        <span className="text-zinc-400">live editor</span> via native engine (after flush) — not whichever
         history row is highlighted. Status:{" "}
         <span className={saveStatus === "saved" ? "text-emerald-500/90" : "text-amber-500/90"}>
           {saveStatus === "saved" ? "Render-ready" : saveStatus === "unsaved" ? "Unsaved edits" : saveStatus}

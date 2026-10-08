@@ -30,10 +30,6 @@ $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
 $AccountId = (Invoke-Aws sts get-caller-identity --query Account --output text)
 $EcrBase = "$AccountId.dkr.ecr.$Region.amazonaws.com"
 
-# Remotion Lambda (deployed)
-$RemotionFunctionName = "remotion-render-4-0-489-mem2048mb-disk2048mb-120sec"
-$RemotionServeUrl = "https://remotionlambda-useast1-bpvm9ei88s.s3.us-east-1.amazonaws.com/sites/hanuman-timeline/index.html"
-$RemotionBucketName = "remotionlambda-useast1-bpvm9ei88s"
 $ArtifactsBucket = "hanuman-artifacts-$AccountId"
 
 Write-Host "==> HANUMAN deploy account=$AccountId region=$Region" -ForegroundColor Cyan
@@ -70,10 +66,15 @@ if (-not $SkipImages) {
     if (-not $SkipBuild) {
         Write-Host "==> Building Docker images..." -ForegroundColor Cyan
         docker build -f apps/api/Dockerfile -t "${EcrBase}/hanuman/api:${ImageTag}" .
+        $SupaUrl = "https://qbyrlypptshxqjigrbuo.supabase.co"
+        $SupaAnon = ((Get-Content (Join-Path $RepoRoot ".env") | Where-Object { $_ -match "^NEXT_PUBLIC_SUPABASE_ANON_KEY=" } | Select-Object -First 1) -split "=", 2)[1].Trim().Trim('"').Trim("'")
+        
         docker build -f apps/web/Dockerfile `
             --build-arg API_INTERNAL_URL=http://api.hanuman.local:8000 `
             --build-arg NEXT_PUBLIC_API_URL=/api `
             --build-arg NEXT_PUBLIC_APP_URL="$env:NEXT_PUBLIC_APP_URL" `
+            --build-arg NEXT_PUBLIC_SUPABASE_URL="$SupaUrl" `
+            --build-arg NEXT_PUBLIC_SUPABASE_ANON_KEY="$SupaAnon" `
             -t "${EcrBase}/hanuman/web:${ImageTag}" .
         docker build -f workers/orchestrator/Dockerfile -t "${EcrBase}/hanuman/orchestrator:${ImageTag}" .
         docker build -f workers/media/Dockerfile -t "${EcrBase}/hanuman/media:${ImageTag}" .
@@ -105,9 +106,6 @@ $SecretName = "$EnvironmentName/app-config"
 $SecretJson = @{
     db_password = $DbPassword
     internal_api_key = $InternalKey
-    remotion_function_name = $RemotionFunctionName
-    remotion_serve_url = $RemotionServeUrl
-    remotion_bucket_name = $RemotionBucketName
 } | ConvertTo-Json -Compress
 
 if (Test-Aws secretsmanager describe-secret --secret-id $SecretName --region $Region) {
@@ -179,9 +177,6 @@ $State = @{
     region = $Region
     environment = $EnvironmentName
     artifactsBucket = $ArtifactsBucket
-    remotionFunctionName = $RemotionFunctionName
-    remotionServeUrl = $RemotionServeUrl
-    remotionBucketName = $RemotionBucketName
     databaseHost = $DbHost
     useRds = $UseRds
     dbPassword = $DbPassword
@@ -197,7 +192,6 @@ $State | Set-Content $StatePath -Encoding UTF8
 Write-Host ""
 Write-Host "==> Phase 1 complete. Core AWS resources ready." -ForegroundColor Green
 Write-Host "    Artifacts S3:  s3://$ArtifactsBucket"
-Write-Host "    Remotion Lambda: $RemotionFunctionName"
 Write-Host "    RDS endpoint:  $DbHost"
 Write-Host "    State file:    $StatePath"
 Write-Host ""

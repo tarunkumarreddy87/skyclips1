@@ -1,10 +1,12 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useState } from "react";
 import { motion, useReducedMotion } from "motion/react";
 import { ArrowUp, Play } from "lucide-react";
 import { LandingBriefDemo } from "@/components/landing/landing-prompt-box";
 import { cn } from "@/lib/utils";
+import { landingMedia } from "@/components/landing/landing-media-data";
 
 function StepLabel({ n, soon }: { n: string; soon?: boolean }) {
   return (
@@ -26,13 +28,11 @@ const AGENT_TASKS = [
   "Aligning voiceover to scene duration",
 ] as const;
 
-const SIDE_THUMBS = [
-  { label: "BATTLE OF BRITAIN", tone: "from-stone-800 to-zinc-950" },
-  { label: "$150,000 PER NIGHT", tone: "from-sky-950 to-slate-950" },
-  { label: "THE GREATEST", tone: "from-neutral-800 to-black" },
-  { label: "INDIAN HISTORY", tone: "from-amber-950 to-stone-950" },
-  { label: "DEEP OCEAN", tone: "from-teal-950 to-cyan-950" },
-] as const;
+const SIDE_THUMBS = landingMedia.slice(0, 5).map((item) => ({
+  label: item.label.toUpperCase(),
+  tone: "from-indigo-950 to-violet-950",
+  image: item.image,
+}));
 
 export function LandingSteps() {
   const reduce = useReducedMotion();

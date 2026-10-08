@@ -1,14 +1,17 @@
 "use client";
 
 import { Blend, X, Zap } from "lucide-react";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useEditorStore } from "@/lib/editor/store";
 import type { TransitionType } from "@/lib/editor/types";
 import {
   DEFAULT_TRANSITION_DURATION_MS,
   TRANSITION_PRESETS,
 } from "@/lib/editor/transition-presets";
-import { transitionPreviewNote } from "@/lib/editor/export-honesty";
+import { dualClipTransitionStyles, transitionOverlayStyle } from "@/lib/editor/preview-transition";
+import { transitionSound } from "@/lib/editor/transition-sounds";
+import { Switch } from "@/components/ui/switch";
+import { Field, FieldContent, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -17,6 +20,7 @@ export function TransitionsPanel() {
   const transitions = useEditorStore((s) => s.timeline.transitions);
   const tracks = useEditorStore((s) => s.timeline.tracks);
   const setTransition = useEditorStore((s) => s.setTransition);
+  const setTransitionSound = useEditorStore((s) => s.setTransitionSound);
   const deleteTransition = useEditorStore((s) => s.deleteTransition);
   const addTransition = useEditorStore((s) => s.addTransition);
   const toggleToolPanel = useEditorStore((s) => s.toggleToolPanel);
@@ -136,46 +140,22 @@ export function TransitionsPanel() {
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-2">
-            {TRANSITION_PRESETS.map((p) => {
-              const selected = transition?.transitionType === p.id;
-              const approx = transitionPreviewNote(p.id) === "approx";
-              return (
-                <button
-                  key={p.id}
-                  type="button"
-                  title={
-                    approx
-                      ? `${p.blurb} — CSS preview is softer; Remotion export is authoritative`
-                      : p.blurb
-                  }
-                  onClick={() => pickType(p.id)}
-                  className={cn(
-                    "relative flex flex-col items-center gap-1.5 rounded-xl border p-2 text-center transition-colors",
-                    selected
-                      ? "border-primary/50 bg-primary/10"
-                      : "border-white/10 bg-[#1a1a1a] hover:border-white/20",
-                  )}
-                >
-                  {approx ? (
-                    <span className="absolute right-1 top-1 rounded bg-amber-500/20 px-1 py-px text-[8px] font-semibold uppercase tracking-wide text-amber-200/90">
-                      ~
-                    </span>
-                  ) : null}
-                  <span
-                    className={cn(
-                      "relative flex size-12 items-center justify-center overflow-hidden rounded-full border",
-                      selected ? "border-primary bg-[#1a1a1a]" : "border-white/10 bg-[#1a1a1a]",
-                    )}
-                  >
-                    <TransitionThumb type={p.id} />
-                  </span>
-                  <span className="text-[10px] font-medium leading-tight text-zinc-300">
-                    {p.label}
-                  </span>
-                </button>
-              );
-            })}
+        {transition && transitionSound(transition.transitionType) && (
+          <FieldGroup>
+            <Field orientation="horizontal">
+              <FieldContent>
+                <FieldLabel htmlFor="transition-sound">Transition sound</FieldLabel>
+                <FieldDescription>{transitionSound(transition.transitionType)?.label} · synced to this cut</FieldDescription>
+              </FieldContent>
+              <Switch id="transition-sound" checked={!transition.sfxMuted}
+                onCheckedChange={checked => setTransitionSound(transition.id, checked)} />
+            </Field>
+          </FieldGroup>
+        )}
+        <p className="text-xs text-muted-foreground">Hover or focus to preview. Choose a style to apply it.</p>
+        <div className="grid grid-cols-2 gap-2">
+          {TRANSITION_PRESETS.map(p => <TransitionTile key={p.id} preset={p}
+            selected={transition?.transitionType === p.id} onPick={() => pickType(p.id)} />)}
         </div>
 
         {transition ? (
@@ -228,83 +208,36 @@ function DurationRow({
   );
 }
 
-/** Tiny CSS “thumbnail” suggesting the wipe/fade direction. */
-function TransitionThumb({ type }: { type: TransitionType }) {
-  if (type === "cut") {
-    return (
-      <span className="flex h-full w-full">
-        <span className="w-1/2 bg-zinc-400" />
-        <span className="w-1/2 bg-zinc-700" />
-      </span>
-    );
-  }
-  if (type === "fade" || type === "dissolve") {
-    return (
-      <span
-        className="h-full w-full"
-        style={{
-          background: "linear-gradient(90deg, #71717a 0%, #a1a1aa 50%, #3f3f46 100%)",
-        }}
-      />
-    );
-  }
-  if (type.startsWith("wipe") || type.startsWith("slide")) {
-    const dir =
-      type.includes("left") || type === "slide"
-        ? "90deg"
-        : type.includes("right") || type === "slide-pan"
-          ? "270deg"
-          : type.includes("up")
-            ? "0deg"
-            : "180deg";
-    return (
-      <span
-        className="h-full w-full"
-        style={{
-          background: `linear-gradient(${dir}, #52525b 40%, #d4d4d8 50%, #27272a 60%)`,
-        }}
-      />
-    );
-  }
-  if (type === "zoom" || type === "circleopen" || type === "circleclose") {
-    return (
-      <span className="relative flex size-full items-center justify-center bg-zinc-700">
-        <span
-          className={cn(
-            "rounded-full border-2 border-zinc-300",
-            type === "circleclose" ? "size-4" : "size-7",
-          )}
-        />
-      </span>
-    );
-  }
-  if (type === "pixelize") {
-    return (
-      <span className="grid h-full w-full grid-cols-4 grid-rows-3 gap-px bg-zinc-300">
-        {Array.from({ length: 12 }).map((_, i) => (
-          <span key={i} className={i % 2 === 0 ? "bg-zinc-500" : "bg-zinc-800"} />
-        ))}
-      </span>
-    );
-  }
-  if (type === "film-burn") {
-    return (
-      <span
-        className="h-full w-full"
-        style={{
-          background: "radial-gradient(circle at 50% 50%, #fbbf24, #7f1d1d 70%)",
-        }}
-      />
-    );
-  }
-  if (type === "glitch") {
-    return (
-      <span className="flex h-full w-full flex-col gap-0.5 overflow-hidden bg-black p-0.5">
-        <span className="h-1.5 w-full bg-cyan-400/80" />
-        <span className="h-1.5 w-[80%] self-end bg-fuchsia-500/80" />
-        <span className="h-1.5 w-full bg-zinc-200/70" />
-      </span>
-    );
-  }
-  return <span className="h-full w-full bg-zinc-400" />;
+function TransitionTile({ preset, selected, onPick }: {
+  preset: (typeof TRANSITION_PRESETS)[number]; selected: boolean; onPick: () => void;
+}) {
+  const [hovered, setHovered] = useState(false);
+  const [progress, setProgress] = useState(0.5);
+  useEffect(() => {
+    if (!hovered || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    let frame = 0;
+    const start = performance.now();
+    const tick = (now: number) => {
+      setProgress(Math.min(1, Math.max(0, ((now - start) % 1800 - 300) / 750)));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [hovered]);
+  const style = dualClipTransitionStyles(preset.id, progress);
+  return <button type="button" title={preset.blurb} aria-pressed={selected}
+    onClick={onPick} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+    onFocus={() => setHovered(true)} onBlur={() => setHovered(false)}
+    className={cn("flex min-w-0 flex-col gap-2 rounded-xl border p-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-ring",
+      selected ? "border-primary bg-primary/10" : "border-border bg-card hover:bg-accent")}>
+    <span aria-hidden className="relative isolate block aspect-video w-full overflow-hidden rounded-lg bg-black">
+      <span className="absolute inset-0 flex items-center justify-center text-xl font-semibold"
+        style={{ background: "linear-gradient(135deg, #30596a, #a2c5ba)", color: "#f4f5de", ...style.from }}>01</span>
+      <span className="absolute inset-0 flex items-center justify-center text-xl font-semibold"
+        style={{ background: "linear-gradient(135deg, #322d53, #e0a87b)", color: "#fff0e5", ...style.to }}>02</span>
+      <span className="absolute inset-0 z-10" style={transitionOverlayStyle(preset.id, progress)} />
+    </span>
+    <span className="text-xs font-medium text-foreground">{preset.label}</span>
+    <span className="text-[10px] text-muted-foreground">{transitionSound(preset.id) ? "Sound included" : "Silent blend"}</span>
+  </button>;
 }

@@ -1,4 +1,5 @@
 from collections.abc import AsyncGenerator
+import hmac
 
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy import select
@@ -14,6 +15,7 @@ from app.services.project_service import ProjectService
 from app.services.quote_service import QuoteService
 from app.services.render_service import RenderServiceClient
 from app.services.storage import StorageService, get_storage_service
+from app.services.supabase_auth import supabase_auth_enabled, verify_supabase_access_token
 
 DEV_USER_ID = "00000000-0000-0000-0000-000000000001"
 
@@ -23,15 +25,75 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
         yield session
 
 
+def _bearer_token(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    parts = authorization.strip().split(None, 1)
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    return parts[1].strip() or None
+
+
+async def _upsert_user(
+    session: AsyncSession,
+    *,
+    external_id: str,
+    email: str | None,
+) -> User:
+    result = await session.execute(select(User).where(User.external_id == external_id))
+    user = result.scalar_one_or_none()
+    if user is None:
+        user = User(external_id=external_id, email=email)
+        session.add(user)
+        await session.commit()
+        await session.refresh(user)
+        return user
+    if email and user.email != email:
+        user.email = email
+        await session.commit()
+        await session.refresh(user)
+    return user
+
+
 async def get_current_user(
     session: AsyncSession = Depends(get_db),
+    authorization: str | None = Header(default=None, alias="Authorization"),
     x_user_external_id: str | None = Header(default=None, alias="X-User-External-Id"),
 ) -> User:
-    """MVP auth stub: allow overriding user via header, default to dev user."""
-    external_id = (x_user_external_id or settings.dev_user_external_id).strip()
+    """Resolve the caller via Supabase JWT when configured; else local stub."""
     try:
+        if supabase_auth_enabled():
+            token = _bearer_token(authorization)
+            if not token:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Missing Bearer token. Sign in and retry.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            identity = await verify_supabase_access_token(token)
+            if identity is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or expired session.",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+            # Never trust spoofable X-User-External-Id when Supabase Auth is on.
+            return await _upsert_user(
+                session, external_id=identity.sub, email=identity.email
+            )
+
+        # Dev identity is deliberately available only in explicit stub mode.
+        # With auth missing in real mode, never accept a caller-controlled user id.
+        if not settings.hanuman_stub_mode:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Authentication is not configured.",
+            )
+        external_id = (x_user_external_id or settings.dev_user_external_id).strip()
         result = await session.execute(select(User).where(User.external_id == external_id))
         user = result.scalar_one_or_none()
+    except HTTPException:
+        raise
     except Exception as exc:
         msg = str(exc).lower()
         if "does not exist" in msg or "undefinedtable" in msg:
@@ -42,6 +104,7 @@ async def get_current_user(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail=detail,
         ) from exc
+
     if user is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -85,5 +148,6 @@ def get_render_service() -> RenderServiceClient:
 
 
 async def verify_internal_key(x_internal_key: str = Header(alias="X-Internal-Key")) -> None:
-    if x_internal_key != settings.internal_api_key:
+    expected = settings.internal_api_key.strip()
+    if not expected or not hmac.compare_digest(x_internal_key.encode(), expected.encode()):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid internal key")

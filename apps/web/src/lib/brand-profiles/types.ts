@@ -1,22 +1,33 @@
-import type { FormatMode, ThemeId } from "@hanuman/shared-types";
+import type { HtmlTemplate, FormatMode, ThemeId } from "@hanuman/shared-types";
 import { generateShortId } from "@/lib/id";
 
 export const MAX_BRAND_PROFILES = 10;
 export const MAX_PROFILE_NAME_LENGTH = 100;
 
-export type BrandProfileTab = "overview" | "voiceover" | "creative" | "compliance";
+export type BrandProfileTab = "overview" | "voiceover" | "creative" | "compliance" | "motion";
 
 export interface BrandSourcing {
+  aiGeneratedImages?: boolean;
+  imageModel?: string;
   commercialStock: boolean;
   ccPublicDomain: boolean;
   generalWebCrawling: boolean;
 }
 
+export type BrandTemplateMode = "auto" | "manual";
+
 export interface BrandBlocklist {
   disableAnimations: boolean;
   disableOverlays: boolean;
   disableEffects: boolean;
+  /**
+   * auto — orchestrator AI picks from non-blocklisted shipped templates.
+   * manual — only explicitly allowed templates may be inserted (allowedTemplates).
+   */
+  templateMode: BrandTemplateMode;
   blocklistedTemplates: string[];
+  /** When templateMode=manual, only these labels/ids may be auto-inserted. */
+  allowedTemplates: string[];
   blocklistedTransitions: string[];
 }
 
@@ -33,6 +44,9 @@ export interface BrandProfile {
   avatarHue: number;
   avatarUrl: string | null;
   language: string;
+  captionScript?: "latin" | "native";
+  motionGraphics?: { enabled: boolean; mode?: "selected" | "auto" | "custom" | "none"; selectedTemplateIds?: string[]; templateId: "press-cutout-v1"; soundEnabled: boolean; intensity: "subtle" | "cinematic" };
+  uploadedTemplates?: Array<HtmlTemplate & { previewKey?: string }>;
   voiceId: string;
   themeId: ThemeId;
   backgroundId: string;
@@ -76,7 +90,9 @@ export function defaultCompliance(): BrandCompliance {
       disableAnimations: false,
       disableOverlays: false,
       disableEffects: false,
+      templateMode: "auto",
       blocklistedTemplates: [],
+      allowedTemplates: [],
       blocklistedTransitions: [],
     },
     blacklistedWebpages: [],

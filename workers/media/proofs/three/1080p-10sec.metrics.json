@@ -1,0 +1,14 @@
+{
+  "elapsed_sec": 7.038168100000001,
+  "jobs": [
+    {
+      "output": "D:/HANUMAN/workers/media/proofs/three/1080p-10sec.mp4",
+      "backend": "ANGLE (Intel, Intel(R) UHD Graphics (0x0000A7A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+      "capture": "webcodecs-h264",
+      "frames": 300,
+      "readback_ms": 109.5,
+      "transfer_ms": 1381.7999995946884,
+      "elapsed_sec": 6.072952999999999
+    }
+  ]
+}

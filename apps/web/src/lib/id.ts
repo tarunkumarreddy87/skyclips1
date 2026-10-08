@@ -7,6 +7,7 @@ export function generateId(): string {
 }
 
 export function generateShortId(prefix = ""): string {
-  const id = generateId().replace(/-/g, "").slice(0, 8);
+  // Retain the random component on insecure HTTP, where randomUUID may be unavailable.
+  const id = generateId().replace(/-/g, "");
   return prefix ? `${prefix}${id}` : id;
 }

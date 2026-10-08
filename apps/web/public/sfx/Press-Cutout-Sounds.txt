@@ -1,0 +1,11 @@
+SkyClip Press Cutout sound set
+
+Original procedural sound design. No recorded, downloaded or third-party samples.
+Rebuild with: python scripts/generate_press_sfx.py
+
+Files: motion-press-paper.wav, motion-press-impact.wav,
+motion-press-marker.wav, motion-press-whoosh.wav, motion-press-pencil.wav,
+motion-press-rise.wav, motion-press-exit.wav.
+
+Format: stereo, 48,000 Hz, signed 16-bit PCM WAV. Deterministically generated.
+Each file peaks at -7 dBFS before template cue gain and global SFX bus gain.

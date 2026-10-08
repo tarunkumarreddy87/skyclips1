@@ -1,4 +1,5 @@
 /** Subset of packages/timeline-schema schema/timeline.v1.json (ADR 0007). */
+import type { CaptionStyleId, GraphicObject } from "@hanuman/shared-types";
 
 export type AnimationPreset =
   | "none"
@@ -87,15 +88,19 @@ export interface TimelineManifestV1 {
   };
   transitions?: TimelineTransition[];
   overlays?: TimelineOverlay[];
+  graphics?: GraphicObject[];
   settings?: {
     captions_enabled?: boolean;
-    caption_style?: "bold_static" | "karaoke" | "boxed_pill";
+    caption_style?: CaptionStyleId;
     music_volume?: number;
     narration_volume?: number;
     sfx_volume?: number;
     theme_id?: "crime" | "history" | "modern" | "minimalist" | "standard";
-    /** Preview-only A-roll media audio (0–1). Not in export mix. */
+    /** Original footage audio bus (0–1). */
     clip_audio_volume?: number;
+    background_color?: string;
+    background_image?: string;
+    overlay_drop_shadow?: boolean;
   };
 }
 
@@ -108,10 +113,23 @@ export interface TimelineTransition {
   sfx_muted?: boolean;
 }
 
+export interface TimelineOverlaySlot {
+  text?: string;
+  value?: number;
+  color?: string;
+  label?: string;
+}
+
 export interface TimelineOverlay {
+  scene?: import("@hanuman/shared-types").MotionScene;
   id: string;
   type: string;
   text?: string;
+  title?: string;
+  subtitle?: string;
+  slots?: TimelineOverlaySlot[];
+  image_refs?: string[];
+  theme_id?: string;
   start_sec: number;
   duration_sec: number;
   transform?: ElementTransform;
@@ -127,6 +145,9 @@ export interface TimelineOverlay {
 }
 
 export interface TimelineVideoClip {
+  motion_template?: import("@hanuman/shared-types").EditorialARollTemplate;
+  three_scene?: import("@hanuman/shared-types").ThreeScene;
+  visual_effects?: import("@hanuman/shared-types").ClipVisualEffects;
   id: string;
   scene_id: string;
   type: "image" | "video";
@@ -141,6 +162,8 @@ export interface TimelineVideoClip {
 }
 
 export interface TimelineBrollClip {
+  three_scene?: import("@hanuman/shared-types").ThreeScene;
+  visual_effects?: import("@hanuman/shared-types").ClipVisualEffects;
   id: string;
   scene_id: string;
   type: "image" | "video";
@@ -149,6 +172,7 @@ export interface TimelineBrollClip {
   duration_sec: number;
   source_start_sec?: number;
   fit?: "cover" | "contain";
+  muted?: boolean;
   label?: string;
   transform?: ElementTransform;
   animation?: ElementAnimation;

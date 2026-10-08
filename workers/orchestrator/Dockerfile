@@ -10,6 +10,8 @@ WORKDIR /src
 RUN pip install --no-cache-dir uv
 
 COPY packages/shared-types/python /src/packages/shared-types/python
+COPY packages/timeline-schema/python /src/packages/timeline-schema/python
+COPY packages/timeline-schema/schema /src/packages/timeline-schema/schema
 COPY workers/orchestrator/pyproject.toml workers/orchestrator/uv.lock* /src/workers/orchestrator/
 WORKDIR /src/workers/orchestrator
 RUN uv sync --no-dev || uv sync

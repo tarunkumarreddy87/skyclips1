@@ -3,11 +3,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Loader2 } from "lucide-react";
-import { usePanelRef } from "react-resizable-panels";
 import { useEditorStore } from "@/lib/editor/store";
 import { downloadVideo, startGeneration } from "@/lib/api-client";
 import { requestEditorMockFallback } from "@/lib/editor/load-editor-state";
-import { EditorGridBg } from "./editor-grid-bg";
 import { EditorToolDrawer } from "./editor-tool-drawer";
 import { EditorSettingsSheet } from "./editor-settings-sheet";
 import { ProjectInfoDialog } from "./dialogs/project-info-dialog";
@@ -23,14 +21,7 @@ import { EditorAgentDock } from "./editor-agent-dock";
 import { useEditorKeyboard } from "./hooks/use-editor-keyboard";
 import { ensureEditorTextFontsLoaded } from "@/lib/editor/text-fonts";
 import { isPreviewAudioGateBlocked } from "@/lib/editor/preview-audio-transport";
-import { isRemotionPreviewEnabled } from "@/lib/editor/preview-engine";
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from "@/components/ui/resizable";
 import { useIsTablet } from "@/lib/editor/use-is-mobile";
-import { cn } from "@/lib/utils";
 
 interface VideoEditorPageProps {
   projectId: string;
@@ -49,17 +40,8 @@ export function VideoEditorPage({ projectId }: VideoEditorPageProps) {
   const durationMs = useEditorStore((s) => s.timeline.durationMs);
   const agentPanelOpen = useEditorStore((s) => s.ui.agentPanelOpen);
   const isTablet = useIsTablet();
-  const agentPanelRef = usePanelRef();
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (isTablet) return;
-    const panel = agentPanelRef.current;
-    if (!panel) return;
-    if (agentPanelOpen) panel.expand();
-    else panel.collapse();
-  }, [agentPanelOpen, agentPanelRef, isTablet]);
 
   useEditorKeyboard();
 
@@ -99,22 +81,19 @@ export function VideoEditorPage({ projectId }: VideoEditorPageProps) {
       boot.setPlayhead(0);
     }
 
-    // Remotion Player drives playhead via frameupdate — a second RAF clock
-    // desyncs captions/timeline from picture (stuck / racing preview).
-    if (isRemotionPreviewEnabled()) return;
-
     let raf = 0;
     let last = performance.now();
     let lastStoreWrite = 0;
     // Monotonic local clock — resynced on external seeks (not audio-drift nudges).
     let localMs = useEditorStore.getState().ui.playheadMs;
+    let lastWrittenMs = localMs;
 
     const tick = (now: number) => {
       const dt = Math.min(100, now - last);
       last = now;
       // Freeze the editor clock until narration can play — prevents silent picture
       // racing ahead of voice while HTMLAudio buffers.
-      if (isPreviewAudioGateBlocked()) {
+      if (isPreviewAudioGateBlocked() || useEditorStore.getState().ui.previewScrubMs != null) {
         raf = requestAnimationFrame(tick);
         return;
       }
@@ -122,8 +101,9 @@ export function VideoEditorPage({ projectId }: VideoEditorPageProps) {
       const { playbackSpeed } = state.ui;
       const storePh = state.ui.playheadMs;
       // User seek / inspector jump while playing — adopt store position.
-      if (storePh < localMs - 16 || Math.abs(storePh - localMs) > 80) {
+      if (storePh !== lastWrittenMs) {
         localMs = storePh;
+        lastWrittenMs = storePh;
       }
       localMs += dt * playbackSpeed;
       if (localMs >= state.timeline.durationMs) {
@@ -134,6 +114,7 @@ export function VideoEditorPage({ projectId }: VideoEditorPageProps) {
       // ~30fps store writes — enough for audio sync without overloading CSS preview.
       if (now - lastStoreWrite >= 33) {
         lastStoreWrite = now;
+        lastWrittenMs = localMs;
         state.setPlayhead(localMs);
       }
       raf = requestAnimationFrame(tick);
@@ -170,7 +151,7 @@ export function VideoEditorPage({ projectId }: VideoEditorPageProps) {
 
   if (loadStatus === "loading" || loadStatus === "idle") {
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 bg-[#111111] text-[#9E9E9E]">
+      <div className="flex h-full flex-col items-center justify-center gap-3 bg-background text-muted-foreground">
         <Loader2 className="size-8 animate-spin text-[#2563EB]" />
         <p className="text-sm">Loading project timeline…</p>
       </div>
@@ -187,11 +168,11 @@ export function VideoEditorPage({ projectId }: VideoEditorPageProps) {
         : "Could not load editor";
 
     return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 bg-[#111111] px-6 text-center">
-        <p className="text-sm font-medium text-white">{title}</p>
-        <p className="max-w-md text-xs text-[#888]">{loadError}</p>
+      <div className="flex h-full flex-col items-center justify-center gap-4 bg-background px-6 text-center">
+        <p className="text-sm font-medium text-foreground">{title}</p>
+        <p className="max-w-md text-xs text-muted-foreground">{loadError}</p>
         {projectStatus ? (
-          <p className="text-[10px] uppercase tracking-wide text-[#666]">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
             Project status: {projectStatus}
           </p>
         ) : null}
@@ -200,7 +181,7 @@ export function VideoEditorPage({ projectId }: VideoEditorPageProps) {
           <button
             type="button"
             onClick={() => void init(projectId)}
-            className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-300 hover:bg-white/5"
+            className="rounded-lg border border-border px-4 py-2 text-xs text-foreground hover:bg-accent"
           >
             Retry
           </button>
@@ -228,24 +209,24 @@ export function VideoEditorPage({ projectId }: VideoEditorPageProps) {
           ) : null}
           <Link
             href="/projects"
-            className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-300 hover:bg-white/5"
+            className="rounded-lg border border-border px-4 py-2 text-xs text-foreground hover:bg-accent"
           >
             Back to projects
           </Link>
           <Link
             href="/studio"
-            className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-300 hover:bg-white/5"
+            className="rounded-lg border border-border px-4 py-2 text-xs text-foreground hover:bg-accent"
           >
             Go to Studio
           </Link>
         </div>
         {!isTimelineMissing ? (
-          <p className="max-w-md text-[10px] text-[#666]">
+          <p className="max-w-md text-[10px] text-muted-foreground">
             {isApiDown ? (
               "Docker Desktop must be running, then make up and make api."
             ) : (
               <>
-                Set <code className="text-[#aaa]">NEXT_PUBLIC_EDITOR_USE_MOCK=true</code> only for
+                Set <code className="text-foreground">NEXT_PUBLIC_EDITOR_USE_MOCK=true</code> only for
                 local UI dev without a timeline.
               </>
             )}
@@ -268,55 +249,15 @@ export function VideoEditorPage({ projectId }: VideoEditorPageProps) {
   );
 
   return (
-    <div className="relative flex h-full flex-col overflow-hidden bg-[#111111] text-white">
-      <EditorGridBg />
+    <div className="editor-theme-surface relative flex h-full flex-col overflow-hidden bg-background text-foreground">
       <TopToolbar projectId={projectId} />
       <div className="relative flex min-h-0 min-w-0 flex-1 overflow-hidden">
-        {isTablet ? (
-          <>
-            {workspace}
-            <EditorAgentDock projectId={projectId} layout="overlay" />
-          </>
-        ) : (
-          <ResizablePanelGroup
-            orientation="horizontal"
-            className="h-full min-h-0 w-full"
-            id="editor-agent-split"
-          >
-            <ResizablePanel defaultSize="72" minSize="48" className="min-h-0 min-w-0">
-              <div className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden">
-                {workspace}
-              </div>
-            </ResizablePanel>
-            <ResizableHandle
-              withHandle
-              disabled={!agentPanelOpen}
-              className={cn(
-                "mx-0.5 w-1.5 rounded-full bg-transparent transition-colors hover:bg-white/10",
-                !agentPanelOpen && "pointer-events-none opacity-0",
-              )}
-            />
-            <ResizablePanel
-              id="editor-agent-panel"
-              panelRef={agentPanelRef}
-              collapsible
-              collapsedSize={0}
-              defaultSize="28"
-              minSize="18"
-              maxSize="42"
-              className="min-h-0 min-w-0"
-            >
-              <div
-                className={cn(
-                  "h-full min-h-0 py-2 pr-2",
-                  !agentPanelOpen && "pointer-events-none opacity-0",
-                )}
-              >
-                <EditorAgentDock projectId={projectId} layout="panel" />
-              </div>
-            </ResizablePanel>
-          </ResizablePanelGroup>
-        )}
+        <div className="flex h-full min-h-0 w-full min-w-0" dir="ltr">
+          <div className="flex min-w-0 flex-1 flex-col overflow-hidden">{workspace}</div>
+          <div className={isTablet ? "contents" : agentPanelOpen ? "h-full min-h-0 w-[min(360px,30vw)] shrink-0 py-2 pr-2 pl-1.5" : "hidden"}>
+            <EditorAgentDock projectId={projectId} layout={isTablet ? "overlay" : "panel"} />
+          </div>
+        </div>
         <EditorSettingsSheet />
       </div>
       <ProjectInfoDialog />

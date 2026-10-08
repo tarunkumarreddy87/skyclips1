@@ -3,5 +3,5 @@
   "framework": "nextjs",
   "installCommand": "corepack enable && pnpm install --frozen-lockfile",
   "buildCommand": "pnpm --filter @hanuman/web build",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- apps/web packages/shared-types packages/remotion-renderer pnpm-lock.yaml package.json"
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- apps/web packages/shared-types packages/video-engine pnpm-lock.yaml package.json"
 }

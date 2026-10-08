@@ -18,7 +18,7 @@ ADR 0003 specified a managed auth provider (Clerk/Auth0) and deferred billing. P
 | User + app data | MongoDB Atlas |
 | Subscriptions | [Dodo Payments](https://docs.dodopayments.com/) |
 | Object storage | AWS S3 (unchanged) |
-| Video render | Remotion Lambda (unchanged; ADR 0009) |
+| Video render | Owned video engine (ADR 0012) |
 | Edge | Cloudflare (DNS, CDN, SSL, WAF) |
 
 Clerk is removed. Billing becomes in-scope for subscription checkout (credit enforcement still incremental).
@@ -77,5 +77,5 @@ Clerk is removed. Billing becomes in-scope for subscription checkout (credit enf
 1. Clerk packages and routes gone; sign-up/sign-in via Better Auth
 2. Auth users persist in MongoDB Atlas
 3. Dodo checkout + webhook update subscription document
-4. S3 + Remotion Lambda unchanged and still render
+4. S3 retains artifacts; the owned render-service handles export
 5. Cloudflare runbook published for DNS/SSL cutover

@@ -11,7 +11,7 @@ from pathlib import Path
 API = "http://127.0.0.1:8000"
 PID = "1fbee2bc-1a33-4518-847c-d54665285d9d"
 EXPECT_RUN = "7e0e21d3-8390-4bcb-bbbe-9b628dec0f0a"
-OUT = Path(__file__).resolve().parents[1] / "packages/remotion-renderer/proofs/phase6-indian-fighters-ui-render.mp4"
+OUT = Path(__file__).resolve().parents[1] / "workers/media/proofs/phase6-indian-fighters-ui-render.mp4"
 
 
 def get(path: str):

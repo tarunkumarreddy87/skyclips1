@@ -1,7 +1,7 @@
 import type { Track, TrackType } from "./types";
 
 /** Premium timeline dimensions — denser stack closer to RVE / VEED. */
-export const TIMELINE_LABEL_WIDTH = 108;
+export const TIMELINE_LABEL_WIDTH = 28;
 export const TIMELINE_RULER_HEIGHT = 24;
 export const TIMELINE_CONTROLS_HEIGHT = 58;
 export const TIMELINE_TRACK_GAP = 2;
@@ -39,6 +39,27 @@ export const TRACK_ALWAYS_VISIBLE: ReadonlySet<TrackType> = new Set([
 
 export function trackRowHeight(type: TrackType): number {
   return TRACK_HEIGHT_BY_TYPE[type] ?? 28;
+}
+
+const layoutCache = new WeakMap<Track, { height: number; offsets: Map<string, number> }>();
+
+/** Pack simultaneous clips into visible sub-lanes without changing their timing or layer order. */
+export function layoutTrack(track: Track): { height: number; offsets: Map<string, number> } {
+  const cached = layoutCache.get(track);
+  if (cached) return cached;
+  const rowHeight = trackRowHeight(track.type);
+  const rowEnds: number[] = [];
+  const offsets = new Map<string, number>();
+  for (const item of [...track.items].sort((a, b) => a.startMs - b.startMs || a.id.localeCompare(b.id))) {
+    let row = rowEnds.findIndex((end) => end <= item.startMs);
+    if (row < 0) row = rowEnds.length;
+    rowEnds[row] = item.endMs;
+    offsets.set(item.id, row * (rowHeight + TIMELINE_TRACK_GAP));
+  }
+  const rows = Math.max(1, rowEnds.length);
+  const result = { height: rows * rowHeight + (rows - 1) * TIMELINE_TRACK_GAP, offsets };
+  layoutCache.set(track, result);
+  return result;
 }
 
 export const TRACK_META: Record<
@@ -97,22 +118,19 @@ export function resolveVisibleTracks(
   showAllTracks: boolean,
   trackOrder?: TrackType[],
 ): Track[] {
-  const byType = new Map(tracks.map((t) => [t.type, t]));
   const baseOrder = trackOrder?.length ? trackOrder : TRACK_DISPLAY_ORDER;
   // Append any track types missing from a custom order so lanes never vanish.
-  const order = [...baseOrder];
+  const order = [...new Set(baseOrder)];
   for (const type of TRACK_DISPLAY_ORDER) {
     if (!order.includes(type)) order.push(type);
   }
   const ordered: Track[] = [];
   for (const type of order) {
-    const track = byType.get(type);
-    if (!track) continue;
-    const hasItems = track.items.length > 0;
-    // SFX only appears when it has clips (now exports via music bus).
-    if (type === "sfx" && !hasItems && !showAllTracks) continue;
-    if (!showAllTracks && !hasItems && !TRACK_ALWAYS_VISIBLE.has(type)) continue;
-    ordered.push(track);
+    for (const track of tracks.filter((candidate) => candidate.type === type)) {
+      const hasItems = track.items.length > 0;
+      if (!showAllTracks && !hasItems && !TRACK_ALWAYS_VISIBLE.has(type)) continue;
+      ordered.push(track);
+    }
   }
   return ordered;
 }

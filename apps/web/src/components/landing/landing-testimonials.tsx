@@ -80,8 +80,9 @@ export function LandingTestimonials() {
   const reduce = useReducedMotion();
 
   return (
-    <section id="proof" className="scroll-mt-24 border-t border-white/6 py-24 sm:py-32">
-      <div className="mx-auto max-w-6xl px-5 sm:px-8">
+    <section id="proof" className="relative scroll-mt-24 overflow-hidden border-t border-white/6 py-24 sm:py-32">
+      <div className="pointer-events-none absolute -right-32 top-20 size-96 rounded-full bg-[#2f6bff]/10 blur-[120px]" />
+      <div className="relative mx-auto max-w-6xl px-5 sm:px-8">
         <div className="flex flex-col gap-8 lg:flex-row lg:items-end lg:justify-between">
           <motion.div
             initial={reduce ? false : { opacity: 0, y: 20 }}

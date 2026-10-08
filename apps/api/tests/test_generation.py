@@ -31,8 +31,10 @@ async def _approved_project(client: AsyncClient) -> dict:
         pytest.skip("Database not migrated or dev user missing")
     assert res.status_code == 201, res.text
     project = res.json()
-    await client.post(f"/projects/{project['id']}/quote")
-    await client.post(f"/projects/{project['id']}/approve")
+    quote = await client.post(f"/projects/{project['id']}/quote")
+    await client.post(
+        f"/projects/{project['id']}/approve", json={"quoteId": quote.json()["id"]}
+    )
     return project
 
 

@@ -4,6 +4,7 @@ export type {
   BrandProfile,
   BrandProfileTab,
   BrandSourcing,
+  BrandTemplateMode,
   BrandVoice,
   BackgroundPreset,
 } from "./types";
@@ -23,4 +24,8 @@ export {
   VIDEO_LANGUAGES,
 } from "./catalog";
 export { useBrandProfileStore } from "./store";
-export { brandComplianceForGenerate } from "./compliance-payload";
+export {
+  brandComplianceForGenerate,
+  type BrandComplianceGeneratePayload,
+} from "./compliance-payload";
+export { BACKGROUND_PRESET_COLORS, backgroundColorForId } from "./background-colors";

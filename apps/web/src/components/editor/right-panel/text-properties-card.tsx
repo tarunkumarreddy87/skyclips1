@@ -1,391 +1,95 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { AnimationPreset, ElementAnimation, TextItem } from "@/lib/editor/types";
+import { AlignCenter, AlignLeft, AlignRight, Upload } from "lucide-react";
+import { CAPTION_STYLE_IDS, CAPTION_STYLE_META } from "@hanuman/shared-types";
+import type { TextItem } from "@/lib/editor/types";
 import { useEditorStore } from "@/lib/editor/store";
-import { sliderValue } from "@/lib/editor/slider-utils";
-import {
-  DEFAULT_ANIMATION_DURATION_MS,
-} from "@/lib/editor/animation-presets";
-import {
-  EDITOR_TEXT_FONTS,
-  TEXT_MOTION_PRESETS,
-  ensureEditorTextFontsLoaded,
-  fontIdFromFamily,
-  importLocalTextFont,
-  resolveTextFontFamily,
-} from "@/lib/editor/text-fonts";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
-import { cn } from "@/lib/utils";
-import { AlignCenter, AlignLeft, AlignRight, Type, Upload } from "lucide-react";
+import { EDITOR_TEXT_FONTS, TEXT_MOTION_PRESETS, TEXT_STYLE_PRESETS, ensureEditorTextFontsLoaded, importLocalTextFont, resolveTextFontFamily } from "@/lib/editor/text-fonts";
+import { resolveTransform } from "@/lib/editor/transform";
 import { toast } from "sonner";
 
-const WEIGHTS = [
-  { id: "500", label: "Med" },
-  { id: "600", label: "Semi" },
-  { id: "700", label: "Bold" },
-  { id: "800", label: "Black" },
-] as const;
+const field = "h-8 w-full rounded-md border border-white/15 bg-zinc-950 px-2 text-xs text-zinc-100";
+const label = "flex min-w-0 flex-col gap-1.5 text-[11px] text-zinc-400";
 
-const POSITIONS: Array<{ id: string; label: string; x: number; y: number }> = [
-  { id: "tl", label: "TL", x: 18, y: 14 },
-  { id: "tc", label: "Top", x: 50, y: 14 },
-  { id: "tr", label: "TR", x: 82, y: 14 },
-  { id: "ml", label: "Left", x: 18, y: 50 },
-  { id: "mc", label: "Center", x: 50, y: 50 },
-  { id: "mr", label: "Right", x: 82, y: 50 },
-  { id: "bl", label: "BL", x: 18, y: 84 },
-  { id: "bc", label: "Bottom", x: 50, y: 84 },
-  { id: "br", label: "BR", x: 82, y: 84 },
-];
-
-/** Premium text inspector — fonts, size, motion, position (Creativly-style). */
 export function TextPropertiesCard({ item }: { item: TextItem }) {
-  const updateTextItem = useEditorStore((s) => s.updateTextItem);
-  const updateItemTransform = useEditorStore((s) => s.updateItemTransform);
-  const updateItemAnimation = useEditorStore((s) => s.updateItemAnimation);
-  const deleteItem = useEditorStore((s) => s.deleteItem);
+  const update = useEditorStore(s => s.updateTextItem);
+  const updateTransform = useEditorStore(s => s.updateItemTransform);
+  const updateAnimation = useEditorStore(s => s.updateItemAnimation);
+  const settings = useEditorStore(s => s.timeline.settings);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [customFonts, setCustomFonts] = useState<
-    Array<{ id: string; label: string; family: string }>
-  >([]);
-  const isCaption = item.type === "captions";
-  const transform = item.transform ?? {
-    x: item.position?.x ?? 50,
-    y: item.position?.y ?? 50,
-    scaleX: 1,
-    scaleY: 1,
-    rotation: 0,
-    zIndex: isCaption ? 20 : 12,
-  };
-  const fontSize = Math.max(12, Math.min(72, item.fontSize || 28));
-  const activeFontId = fontIdFromFamily(item.fontFamily);
-  const inPreset = item.animation?.in?.preset ?? "fade";
-  const outPreset = item.animation?.out?.preset ?? "fade";
+  const [fonts, setFonts] = useState<Array<{ id: string; label: string; family: string }>>([]);
+  const t = resolveTransform(item.transform, item.position);
+  const caption = item.type === "captions";
+  const scalePct = Math.round(((Math.abs(t.scaleX) + Math.abs(t.scaleY)) / 2) * 100);
+  useEffect(() => { ensureEditorTextFontsLoaded(); }, []);
 
-  useEffect(() => {
-    ensureEditorTextFontsLoaded();
-  }, []);
-
-  function patchAnimation(edge: "in" | "out", preset: AnimationPreset) {
-    const prev: ElementAnimation = item.animation ?? {};
-    const durationMs = prev[edge]?.durationMs ?? DEFAULT_ANIMATION_DURATION_MS;
-    const next: ElementAnimation = {
-      ...prev,
-      [edge]:
-        preset === "none"
-          ? undefined
-          : { preset, durationMs: Math.max(200, durationMs) },
-    };
-    if (!next.in && !next.out && !next.loop) {
-      updateItemAnimation(item.id, {});
-      return;
-    }
-    updateItemAnimation(item.id, next);
-  }
-
-  async function onImportFont(file: File | undefined) {
-    if (!file) return;
-    try {
-      const imported = await importLocalTextFont(file);
-      setCustomFonts((prev) => {
-        if (prev.some((f) => f.id === imported.id)) return prev;
-        return [...prev, imported];
-      });
-      updateTextItem(item.id, { fontFamily: imported.id });
-      toast.success(`Font “${imported.label}” ready`);
-    } catch {
-      toast.error("Could not load that font file");
-    }
-  }
-
-  const fontChoices = [
-    ...EDITOR_TEXT_FONTS,
-    ...customFonts.map((f) => ({
-      id: f.id,
-      label: f.label,
-      family: f.family,
-      category: "custom" as const,
-    })),
-  ];
-
-  return (
-    <div className="space-y-4 rounded-xl border border-white/10 bg-white/[0.02] p-3.5">
-      <div className="flex items-center gap-2">
-        <span className="inline-flex size-7 items-center justify-center rounded-lg bg-violet-500/15 text-violet-300">
-          <Type className="size-3.5" />
-        </span>
-        <div>
-          <p className="text-xs font-semibold tracking-tight text-zinc-200">
-            {isCaption ? "Caption" : "Text layer"}
-          </p>
-          <p className="text-[10px] text-zinc-500">
-            {isCaption
-              ? "Burn-in style · lower third"
-              : "Drag to move · corners to size · fonts & motion below"}
-          </p>
-        </div>
-      </div>
-
-      <div className="space-y-1.5">
-        <Label className="text-[10px] uppercase tracking-wide text-zinc-500">Content</Label>
-        <textarea
-          value={item.text}
-          rows={isCaption ? 2 : 3}
-          onChange={(e) =>
-            updateTextItem(item.id, {
-              text: e.target.value,
-              label: e.target.value.slice(0, 28) || (isCaption ? "Caption" : "Text"),
-            })
-          }
-          className="w-full resize-none rounded-lg border border-white/10 bg-black/30 px-2.5 py-2 text-xs leading-relaxed text-zinc-100 outline-none ring-violet-500/40 placeholder:text-zinc-600 focus:ring-2"
-          style={{ fontFamily: resolveTextFontFamily(item.fontFamily) }}
-          placeholder={isCaption ? "Caption text…" : "Your headline…"}
-        />
-      </div>
-
-      {!isCaption ? (
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between gap-2">
-            <Label className="text-[10px] uppercase tracking-wide text-zinc-500">Font</Label>
-            <button
-              type="button"
-              onClick={() => fileRef.current?.click()}
-              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-white/8 hover:text-zinc-200"
-              title="Import .ttf / .otf / .woff"
-            >
-              <Upload className="size-3" />
-              Import
-            </button>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".ttf,.otf,.woff,.woff2,font/ttf,font/otf,font/woff,font/woff2"
-              className="hidden"
-              onChange={(e) => {
-                void onImportFont(e.target.files?.[0]);
-                e.currentTarget.value = "";
-              }}
-            />
-          </div>
-          <div className="grid max-h-36 grid-cols-2 gap-1 overflow-y-auto pr-0.5">
-            {fontChoices.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => updateTextItem(item.id, { fontFamily: f.id })}
-                className={cn(
-                  "h-8 truncate rounded-md px-2 text-left text-[11px] transition-colors",
-                  activeFontId === f.id
-                    ? "bg-violet-500/25 text-violet-100 ring-1 ring-violet-400/40"
-                    : "bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white",
-                )}
-                style={{ fontFamily: f.family }}
-                title={f.label}
-              >
-                {f.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {!isCaption ? (
-        <div className="space-y-2">
-          <div className="flex items-center justify-between">
-            <Label className="text-[10px] uppercase tracking-wide text-zinc-500">Size</Label>
-            <span className="font-mono text-[10px] tabular-nums text-zinc-400">{fontSize}px</span>
-          </div>
-          <Slider
-            value={[fontSize]}
-            min={14}
-            max={64}
-            step={1}
-            onValueChange={(v) => {
-              const next = sliderValue(v);
-              updateTextItem(item.id, { fontSize: next });
-              updateItemTransform(item.id, {
-                ...transform,
-                scaleX: 1,
-                scaleY: 1,
-              });
-            }}
-          />
-        </div>
-      ) : null}
-
-      {!isCaption ? (
-        <div className="space-y-1.5">
-          <Label className="text-[10px] uppercase tracking-wide text-zinc-500">Weight</Label>
-          <div className="grid grid-cols-4 gap-1">
-            {WEIGHTS.map((w) => (
-              <button
-                key={w.id}
-                type="button"
-                onClick={() => updateTextItem(item.id, { fontWeight: w.id })}
-                className={cn(
-                  "h-7 rounded-md text-[10px] font-medium transition-colors",
-                  String(item.fontWeight) === w.id
-                    ? "bg-violet-500/25 text-violet-100 ring-1 ring-violet-400/40"
-                    : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200",
-                )}
-              >
-                {w.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      {!isCaption ? (
-        <div className="space-y-1.5">
-          <Label className="text-[10px] uppercase tracking-wide text-zinc-500">Align</Label>
-          <div className="flex gap-1">
-            {(
-              [
-                { id: "left" as const, Icon: AlignLeft },
-                { id: "center" as const, Icon: AlignCenter },
-                { id: "right" as const, Icon: AlignRight },
-              ] as const
-            ).map(({ id, Icon }) => (
-              <button
-                key={id}
-                type="button"
-                title={id}
-                onClick={() => updateTextItem(item.id, { alignment: id })}
-                className={cn(
-                  "inline-flex h-8 flex-1 items-center justify-center rounded-md transition-colors",
-                  item.alignment === id
-                    ? "bg-violet-500/25 text-violet-100 ring-1 ring-violet-400/40"
-                    : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200",
-                )}
-              >
-                <Icon className="size-3.5" />
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-      <div className="space-y-1.5">
-        <Label className="text-[10px] uppercase tracking-wide text-zinc-500">Color</Label>
-        <div className="flex items-center gap-2">
-          <input
-            type="color"
-            value={item.color?.startsWith("#") ? item.color : "#ffffff"}
-            onChange={(e) => updateTextItem(item.id, { color: e.target.value })}
-            className="size-9 cursor-pointer rounded-lg border border-white/10 bg-transparent"
-          />
-          <Input
-            value={item.color}
-            onChange={(e) => updateTextItem(item.id, { color: e.target.value })}
-            className="h-9 flex-1 border-white/10 bg-black/30 font-mono text-xs"
-          />
-        </div>
-      </div>
-
-      {!isCaption ? (
-        <div className="space-y-2">
-          <Label className="text-[10px] uppercase tracking-wide text-zinc-500">
-            Text animation
-          </Label>
-          <p className="text-[10px] leading-snug text-zinc-600">
-            In / out motion on this layer. Full set also in the Animations tool.
-          </p>
-          <div className="space-y-1">
-            <span className="text-[10px] text-zinc-500">In</span>
-            <div className="grid grid-cols-3 gap-1">
-              {TEXT_MOTION_PRESETS.map((p) => (
-                <button
-                  key={`in-${p.id}`}
-                  type="button"
-                  onClick={() => patchAnimation("in", p.id as AnimationPreset)}
-                  className={cn(
-                    "h-7 rounded-md text-[10px] transition-colors",
-                    inPreset === p.id
-                      ? "bg-violet-500/25 text-violet-100 ring-1 ring-violet-400/40"
-                      : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200",
-                  )}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="space-y-1">
-            <span className="text-[10px] text-zinc-500">Out</span>
-            <div className="grid grid-cols-3 gap-1">
-              {TEXT_MOTION_PRESETS.map((p) => {
-                const outId = ("outId" in p ? p.outId : p.id) as AnimationPreset;
-                const selected =
-                  outPreset === outId || (p.id === "zoom_in" && outPreset === "zoom_out");
-                return (
-                  <button
-                    key={`out-${p.id}`}
-                    type="button"
-                    onClick={() => patchAnimation("out", outId)}
-                    className={cn(
-                      "h-7 rounded-md text-[10px] transition-colors",
-                      selected
-                        ? "bg-violet-500/25 text-violet-100 ring-1 ring-violet-400/40"
-                        : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-200",
-                    )}
-                  >
-                    {p.label}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {!isCaption ? (
-        <div className="space-y-1.5">
-          <Label className="text-[10px] uppercase tracking-wide text-zinc-500">Position</Label>
-          <div className="grid grid-cols-3 gap-1">
-            {POSITIONS.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() =>
-                  updateItemTransform(item.id, {
-                    ...transform,
-                    x: p.x,
-                    y: p.y,
-                    scaleX: 1,
-                    scaleY: 1,
-                  })
-                }
-                className={cn(
-                  "h-7 rounded-md text-[10px] text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200",
-                  Math.abs(transform.x - p.x) < 1 && Math.abs(transform.y - p.y) < 1
-                    ? "bg-violet-500/20 text-violet-100 ring-1 ring-violet-400/35"
-                    : "bg-white/5",
-                )}
-              >
-                {p.label}
-              </button>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <p className="text-[10px] leading-snug text-zinc-600">
-          Captions stay lower-third safe. Style is project-level (Captions panel).
-        </p>
-      )}
-
-      <Button
-        size="sm"
-        variant="ghost"
-        className="h-8 w-full text-xs text-red-400 hover:bg-red-500/10 hover:text-red-300"
-        onClick={() => deleteItem(item.id)}
-      >
-        Remove
-      </Button>
+  return <div className="space-y-4 p-3" data-text-inspector>
+    <textarea aria-label="Text content" value={item.text} rows={3} className={field + " h-auto resize-y py-2"}
+      style={{ fontFamily: resolveTextFontFamily(item.fontFamily) }}
+      onChange={e => update(item.id, { text: e.target.value, label: e.target.value.slice(0, 40) || "Text" })} />
+    {caption && <label className={label}>Caption style
+      <select aria-label="Caption style" className={field} value={settings.captionStyle}
+        onChange={e => useEditorStore.getState().updateSettings({ captionStyle: e.target.value as typeof settings.captionStyle })}>
+        {CAPTION_STYLE_IDS.map(id => <option key={id} value={id}>{CAPTION_STYLE_META[id].label}</option>)}
+      </select>
+    </label>}
+    <label className={label}>Text style
+      <select aria-label="Text style" className={field} value={item.stylePreset}
+        onChange={e => {
+          const preset = TEXT_STYLE_PRESETS.find(p => p.id === e.target.value);
+          if (preset) update(item.id, { stylePreset: preset.id, fontFamily: preset.fontFamily, fontWeight: preset.fontWeight, color: preset.color, fontSize: preset.fontSize });
+        }}>
+        <option value="default">Custom</option>
+        {TEXT_STYLE_PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+      </select>
+    </label>
+    <div className="flex items-end gap-2">
+      <label className={label + " flex-1"}>Font
+        <select aria-label="Font family" className={field} value={item.fontFamily || "system"} onChange={e => update(item.id, { fontFamily: e.target.value })}>
+          {[...EDITOR_TEXT_FONTS, ...fonts].map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
+        </select>
+      </label>
+      <button type="button" title="Import font" className="flex size-8 shrink-0 items-center justify-center rounded-md border border-white/15" onClick={() => fileRef.current?.click()}><Upload className="size-4" /></button>
+      <input ref={fileRef} type="file" accept=".ttf,.otf,.woff,.woff2" className="hidden" onChange={async e => {
+        const file = e.target.files?.[0]; e.currentTarget.value = ""; if (!file) return;
+        try { const font = await importLocalTextFont(file); setFonts(prev => [...prev.filter(f => f.id !== font.id), font]); update(item.id, { fontFamily: font.id }); }
+        catch { toast.error("Could not load font"); }
+      }} />
     </div>
-  );
+    <div className="grid grid-cols-2 gap-2">
+      <label className={label}>Size<input aria-label="Font size" type="number" min={14} max={64} value={item.fontSize} className={field}
+        onChange={e => { const v = e.currentTarget.valueAsNumber; if (Number.isFinite(v)) update(item.id, { fontSize: Math.max(14, Math.min(64, v)) }); }} /></label>
+      <label className={label}>Weight<select aria-label="Font weight" className={field} value={item.fontWeight} onChange={e => update(item.id, { fontWeight: e.target.value })}>
+        {["400", "500", "600", "700", "800", "900"].map(w => <option key={w} value={w}>{w}</option>)}
+      </select></label>
+    </div>
+    <div className="flex items-center gap-2">
+      <input aria-label="Text color" type="color" value={/^#[0-9a-f]{6}$/i.test(item.color) ? item.color : "#ffffff"} onChange={e => update(item.id, { color: e.target.value })} className="size-8 shrink-0 cursor-pointer bg-transparent" />
+      <input aria-label="Text color hex" value={item.color} className={field} onChange={e => update(item.id, { color: e.target.value })} />
+      {([{ alignment: "left", Icon: AlignLeft }, { alignment: "center", Icon: AlignCenter }, { alignment: "right", Icon: AlignRight }] as const).map(({ alignment, Icon }) =>
+        <button type="button" title={`Align ${alignment}`} aria-pressed={item.alignment === alignment} key={alignment} onClick={() => update(item.id, { alignment })}
+          className={`flex size-8 shrink-0 items-center justify-center rounded-md ${item.alignment === alignment ? "bg-sky-600 text-white" : "bg-white/5"}`}><Icon className="size-4" /></button>)}
+    </div>
+    <div className="grid grid-cols-2 gap-2">
+      {(["x", "y", "rotation"] as const).map(key => <label className={label} key={key}>{key === "rotation" ? "Rotation" : key.toUpperCase() + " %"}
+        <input aria-label={key === "rotation" ? "Text rotation" : `Text ${key.toUpperCase()} position`} type="number" value={Math.round(t[key] * 10) / 10} className={field}
+          onChange={e => { const v = e.currentTarget.valueAsNumber; if (Number.isFinite(v)) updateTransform(item.id, { ...t, [key]: v }); }} />
+      </label>)}
+      <label className={label}>Scale %<input aria-label="Text scale" type="number" min={35} max={350} step={1} value={scalePct} className={field}
+        onChange={e => { const v = e.currentTarget.valueAsNumber; if (Number.isFinite(v)) { const scale = Math.max(35, Math.min(350, v)) / 100; updateTransform(item.id, { ...t, scaleX: Math.sign(t.scaleX || 1) * scale, scaleY: Math.sign(t.scaleY || 1) * scale }); } }} /></label>
+      <label className={label}>Width %<input aria-label="Text box width" type="number" min={18} max={88} value={item.boxWidthPct ?? (caption ? 72 : 56)} className={field}
+        onChange={e => { const v = e.currentTarget.valueAsNumber; if (Number.isFinite(v)) update(item.id, { boxWidthPct: Math.max(18, Math.min(88, v)) }); }} /></label>
+    </div>
+    <button type="button" className="h-8 rounded-md border border-white/15 px-2 text-xs text-zinc-200 hover:bg-white/5"
+      aria-label="Center text in frame" onClick={() => updateTransform(item.id, { ...t, x: 50, y: 50 })}>Center in frame</button>
+    <div className="grid grid-cols-2 gap-2">
+      {(["in", "out"] as const).map(edge => <label className={label} key={edge}>{edge === "in" ? "Entrance" : "Exit"}
+        <select aria-label={edge === "in" ? "Text entrance" : "Text exit"} className={field} value={item.animation?.[edge]?.preset ?? "none"}
+          onChange={e => updateAnimation(item.id, { ...item.animation, [edge]: e.target.value === "none" ? undefined : { preset: e.target.value, durationMs: 450 } })}>
+          {TEXT_MOTION_PRESETS.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
+        </select>
+      </label>)}
+    </div>
+  </div>;
 }

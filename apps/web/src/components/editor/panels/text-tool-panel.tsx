@@ -1,6 +1,9 @@
 "use client";
 
 import { Plus, Upload } from "lucide-react";
+import { TextPropertiesCard } from "../right-panel/text-properties-card";
+import { MotionPropertiesPanel } from "./motion-properties-panel";
+import { ClipTemplateProperties } from "./clip-template-properties";
 import { useRef } from "react";
 import {
   CAPTION_STYLE_IDS,
@@ -75,10 +78,10 @@ export function TextToolPanel() {
   function applyStylePreset(presetId: string) {
     const preset = TEXT_STYLE_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
-    const id = addTextOverlay();
+    const id = textItem?.type === "text" ? textItem.id : addTextOverlay();
     updateTextItem(id, {
-      text: preset.preview,
-      label: preset.label,
+      text: textItem?.type === "text" ? textItem.text : preset.preview,
+      label: textItem?.type === "text" ? textItem.label : preset.label,
       fontFamily: preset.fontFamily,
       fontWeight: preset.fontWeight,
       color: preset.color,
@@ -94,6 +97,76 @@ export function TextToolPanel() {
       });
     }
   }
+
+  if (selectedItem?.type === "animation") return <MotionPropertiesPanel item={selectedItem} />;
+  if (selectedItem?.type === "video" && selectedItem.motionTemplate) return <ClipTemplateProperties key={selectedItem.id} item={selectedItem} />;
+  if (textItem) return (
+    <div className="flex flex-col gap-3 p-3">
+      <div className="flex flex-col gap-2">
+        <Label className="text-xs text-muted-foreground">
+          {isCaption ? "Caption styles" : "Text styles"}
+        </Label>
+        {isCaption ? (
+          <div className="flex max-h-80 flex-col gap-2 overflow-y-auto pr-1">
+            {CAPTION_STYLE_IDS.map((id) => {
+              const meta = CAPTION_STYLE_META[id];
+              const active = activeStyle === id;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => updateSettings({ captionStyle: id as CaptionStyleId })}
+                  style={{ minHeight: 132 }}
+                  className={cn(
+                    "group overflow-hidden rounded-xl border bg-card text-left shadow-sm transition-colors",
+                    active ? "border-primary ring-1 ring-primary/35" : "border-border hover:border-muted-foreground/40",
+                  )}
+                >
+                  <span className="flex flex-col items-center justify-center gap-0.5 bg-background px-5 py-4 text-center text-[17px] font-extrabold leading-[1.05] text-foreground" style={{ minHeight: 96 }}>
+                    <span>Let&apos;s <span className="rounded-sm bg-primary px-1 text-primary-foreground">start</span> with</span>
+                    <span>a demo of your</span>
+                    <span>caption.</span>
+                  </span>
+                  <span className="flex items-center justify-between border-t border-border px-3 py-2">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="truncate text-[11px] font-medium text-foreground">{meta.label}</span>
+                      <span className="rounded-full bg-muted px-1.5 py-0.5 text-[8px] font-semibold uppercase tracking-wide text-muted-foreground">Style</span>
+                    </span>
+                    <span className="flex items-center gap-1" aria-hidden>
+                      <span className="size-2 rounded-full bg-foreground" />
+                      <span className="size-2 rounded-full" style={{ background: meta.swatch }} />
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+            {TEXT_STYLE_PRESETS.map((preset) => (
+              <button
+                key={preset.id}
+                type="button"
+                onClick={() => applyStylePreset(preset.id)}
+                className={cn(
+                  "flex min-h-20 flex-col items-center justify-center gap-1 rounded-xl border bg-card p-3 text-center transition-colors hover:border-muted-foreground/40",
+                  textItem.stylePreset === preset.id && "border-primary ring-1 ring-primary/35",
+                )}
+              >
+                <span style={{ fontFamily: resolveTextFontFamily(preset.fontFamily), color: preset.color }} className="text-sm font-bold">
+                  {preset.preview}
+                </span>
+                <span className="text-[10px] text-muted-foreground">{preset.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <TextPropertiesCard item={textItem} />
+      <Button size="sm" variant="outline" onClick={addTextOverlay}><Plus data-icon="inline-start" />New text layer</Button>
+    </div>
+  );
 
   return (
     <div className="space-y-4 p-3">
@@ -166,7 +239,7 @@ export function TextToolPanel() {
         Import captions (.srt / .vtt)
       </Button>
       <p className="text-[9px] leading-snug text-zinc-600">
-        Caption styles apply to the whole project — preview and Remotion export share the same look.
+        Caption styles apply to the whole project — preview and native engine export share the same look.
       </p>
 
       <div className="flex items-center justify-between rounded-lg border border-white/10 p-2">
@@ -218,68 +291,6 @@ export function TextToolPanel() {
         </div>
       </div>
 
-      {textItem ? (
-        <div className="space-y-3">
-          {isCaption ? (
-            <p className="text-[9px] text-zinc-600">
-              Editing line under playhead. Style above is project-wide.
-            </p>
-          ) : null}
-          <div className="space-y-1.5">
-            <Label className="text-xs text-zinc-500">Content</Label>
-            <Textarea
-              value={textItem.text}
-              onChange={(e) => updateTextItem(textItem.id, { text: e.target.value })}
-              rows={3}
-              className="border-white/10 bg-white/5 text-xs"
-            />
-          </div>
-          {!isCaption ? <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1.5">
-              <Label className="text-xs text-zinc-500">Size</Label>
-              <Input
-                type="number"
-                value={textItem.fontSize}
-                onChange={(e) =>
-                  updateTextItem(textItem.id, { fontSize: Number(e.target.value) })
-                }
-                className="h-8 border-white/10 bg-white/5 text-xs"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label className="text-xs text-zinc-500">Color</Label>
-              <Input
-                type="color"
-                value={textItem.color}
-                onChange={(e) => updateTextItem(textItem.id, { color: e.target.value })}
-                className="h-8 border-white/10 bg-white/5 p-1"
-              />
-            </div>
-          </div> : null}
-          {!isCaption ? <div className="space-y-1.5">
-            <Label className="text-xs text-zinc-500">Alignment</Label>
-            <Select
-              value={textItem.alignment}
-              onValueChange={(v) =>
-                v && updateTextItem(textItem.id, { alignment: v as "left" | "center" | "right" })
-              }
-            >
-              <SelectTrigger className="h-8 border-white/10 bg-white/5 text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="left">Left</SelectItem>
-                <SelectItem value="center">Center</SelectItem>
-                <SelectItem value="right">Right</SelectItem>
-              </SelectContent>
-            </Select>
-          </div> : null}
-        </div>
-      ) : (
-        <p className="text-xs text-zinc-600">
-          Select a caption group on the timeline (or a text overlay) to edit copy.
-        </p>
-      )}
     </div>
   );
 }

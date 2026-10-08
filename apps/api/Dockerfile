@@ -2,9 +2,15 @@ FROM python:3.12-slim
 
 WORKDIR /src
 
+# FFmpeg for editor preview proxy derivation (540p / poster / sprite).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN pip install --no-cache-dir uv
 
 COPY packages/shared-types/python /src/packages/shared-types/python
+COPY packages/timeline-schema /src/packages/timeline-schema
 COPY apps/api/pyproject.toml apps/api/uv.lock* /src/apps/api/
 WORKDIR /src/apps/api
 RUN uv sync --no-dev || uv sync

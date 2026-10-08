@@ -1,4 +1,4 @@
-/** Shared helpers for video-track transition seams (timeline + Remotion preview). */
+/** Shared helpers for video-track transition seams (timeline + native engine preview). */
 
 /** Max gap (ms) still treated as an abutting cut for transition UI / blends. */
 export const TRANSITION_ABUT_EPSILON_MS = 80;

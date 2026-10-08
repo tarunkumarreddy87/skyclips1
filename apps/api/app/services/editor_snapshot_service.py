@@ -9,6 +9,7 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import HTTPException, status
+from hanuman_timeline_schema import validate_timeline, format_errors
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +24,12 @@ from app.schemas.generation import (
     TimelineSnapshotMeta,
 )
 from app.schemas.common import to_iso
+from app.services.media_keys import (
+    timeline_clip_srcs,
+    foreign_editor_srcs,
+    foreign_timeline_srcs,
+    is_project_object_key,
+)
 from app.services.storage import StorageService
 
 logger = logging.getLogger(__name__)
@@ -43,6 +50,23 @@ class EditorSnapshotService:
         payload: SaveTimelineRequest,
     ) -> SaveTimelineResponse:
         project = await self._get_project(user, project_id)
+        errors = validate_timeline(payload.timeline_manifest)
+        if errors:
+            raise HTTPException(status_code=422, detail=format_errors(errors))
+        if payload.timeline_manifest["metadata"]["project_id"] != str(project_id):
+            raise HTTPException(status_code=422, detail="Timeline project does not match this project.")
+        # The saved manifest becomes the render source; it must not point at other projects' media.
+        if foreign_timeline_srcs(payload.timeline_manifest, project.id):
+            raise HTTPException(status_code=422, detail="Timeline references media outside this project.")
+        document_project = payload.editor_document.get("project")
+        if not isinstance(document_project, dict) or document_project.get("id") != str(project_id):
+            raise HTTPException(status_code=422, detail="Editor document project does not match this project.")
+        if foreign_editor_srcs(payload.editor_document, project.id):
+            raise HTTPException(status_code=422, detail="Editor document references media outside this project.")
+        try:
+            json.dumps(payload.editor_document, allow_nan=False)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=422, detail="Editor document contains invalid numeric or JSON values.")
         await self._ensure_original_snapshot(project)
 
         snap_id = uuid.uuid4()
@@ -54,8 +78,9 @@ class EditorSnapshotService:
         editor_bytes = json.dumps(payload.editor_document).encode("utf-8")
         timeline_bytes = json.dumps(payload.timeline_manifest).encode("utf-8")
 
-        self.storage.upload_bytes(editor_key, editor_bytes, "application/json")
-        self.storage.upload_bytes(timeline_key, timeline_bytes, "application/json")
+        # boto3 is synchronous; keep S3 I/O off the event loop.
+        await asyncio.to_thread(self.storage.upload_bytes, editor_key, editor_bytes, "application/json")
+        await asyncio.to_thread(self.storage.upload_bytes, timeline_key, timeline_bytes, "application/json")
 
         # Also update the "current" TIMELINE artifact pointer so render / get_timeline stay aligned.
         await self._upsert_current_timeline_artifact(project, timeline_key, len(timeline_bytes))
@@ -96,8 +121,9 @@ class EditorSnapshotService:
         project = await self._get_project(user, project_id)
         snap = await self._get_snapshot(project.id, snapshot_id)
 
-        editor_doc = self._load_editor_document(snap)
-        timeline_manifest = json.loads(self.storage.get_object_bytes(snap.timeline_s3_key).decode("utf-8"))
+        editor_doc = await asyncio.to_thread(self._load_editor_document, snap)
+        raw_manifest = await asyncio.to_thread(self.storage.get_object_bytes, snap.timeline_s3_key)
+        timeline_manifest = json.loads(raw_manifest.decode("utf-8"))
         timeline_bytes = json.dumps(timeline_manifest).encode("utf-8")
 
         # Persist restore as a new current autosave so reopen shows restored state,
@@ -109,11 +135,16 @@ class EditorSnapshotService:
             timeline_key = snap.timeline_s3_key
         else:
             timeline_key = f"projects/{project.id}/editor/snapshots/{restore_id}/timeline.v1.json"
-            self.storage.upload_bytes(timeline_key, timeline_bytes, "application/json")
+            await asyncio.to_thread(
+                self.storage.upload_bytes, timeline_key, timeline_bytes, "application/json"
+            )
             if editor_doc:
                 editor_key = f"projects/{project.id}/editor/snapshots/{restore_id}/editor.json"
-                self.storage.upload_bytes(
-                    editor_key, json.dumps(editor_doc).encode("utf-8"), "application/json"
+                await asyncio.to_thread(
+                    self.storage.upload_bytes,
+                    editor_key,
+                    json.dumps(editor_doc).encode("utf-8"),
+                    "application/json",
                 )
 
         await self._upsert_current_timeline_artifact(project, timeline_key, len(timeline_bytes))
@@ -135,7 +166,9 @@ class EditorSnapshotService:
         await self.session.refresh(restored)
 
         history = await self._list_snapshot_metas(project.id)
-        media_urls = self._media_urls_from_manifest(timeline_manifest)
+        media_urls = await asyncio.to_thread(
+            self._media_urls_from_manifest, timeline_manifest, project.id
+        )
         return RestoreSnapshotResponse(
             snapshot=self._meta(restored),
             editor_document=editor_doc,
@@ -168,19 +201,21 @@ class EditorSnapshotService:
 
         latest = await self._latest_snapshot(project.id)
         if latest is not None:
-            # Fast path: editor document alone is enough for the client (it ignores
-            # timeline.v1 when editorDocument is present). Skipping the second S3
-            # download cuts open latency roughly in half for edited projects.
+            # Hydrate editor media from its saved document, but preserve the real
+            # render manifest for queue/video retry consumers of this endpoint.
             if latest.editor_s3_key:
                 editor_doc = await asyncio.to_thread(self._load_editor_document, latest)
                 if editor_doc:
                     media_urls = await asyncio.to_thread(
-                        self._media_urls_from_editor_document, editor_doc
+                        self._media_urls_from_editor_document, editor_doc, project.id
                     )
                     return TimelineResponse(
                         artifact_id=str(latest.id),
-                        # Stub — client hydrates from editor_document only.
-                        manifest={"version": "1.0", "fps": 30, "width": 1920, "height": 1080, "tracks": {}},
+                        # Retry-export consumers need the real timeline, even when
+                        # the editor itself hydrates from editor_document.
+                        manifest=json.loads((await asyncio.to_thread(
+                            self.storage.get_object_bytes, latest.timeline_s3_key
+                        )).decode("utf-8")),
                         media_urls=media_urls,
                         editor_document=editor_doc,
                         snapshot_id=str(latest.id),
@@ -196,7 +231,9 @@ class EditorSnapshotService:
             if editor_doc == {}:
                 editor_doc = None
             timeline_manifest = json.loads(raw_manifest.decode("utf-8"))
-            media_urls = await asyncio.to_thread(self._media_urls_from_manifest, timeline_manifest)
+            media_urls = await asyncio.to_thread(
+                self._media_urls_from_manifest, timeline_manifest, project.id
+            )
             return TimelineResponse(
                 artifact_id=str(latest.id),
                 manifest=timeline_manifest,
@@ -214,7 +251,7 @@ class EditorSnapshotService:
             )
         raw_bytes = await asyncio.to_thread(self.storage.get_object_bytes, artifact.s3_key)
         manifest = json.loads(raw_bytes.decode("utf-8"))
-        media_urls = await asyncio.to_thread(self._media_urls_from_manifest, manifest)
+        media_urls = await asyncio.to_thread(self._media_urls_from_manifest, manifest, project.id)
         return TimelineResponse(
             artifact_id=str(artifact.id),
             manifest=manifest,
@@ -411,37 +448,42 @@ class EditorSnapshotService:
         # Original snapshot without editor doc — client maps from timeline.v1
         return {}
 
-    def _media_urls_from_manifest(self, manifest: dict) -> dict[str, str]:
+    def _media_urls_from_manifest(
+        self, manifest: dict, project_id: uuid.UUID | None = None
+    ) -> dict[str, str]:
+        """Browser URLs for clip srcs. Only this project's object keys are presigned."""
         media_urls: dict[str, str] = {}
-        tracks = manifest.get("tracks", {})
-        for clip in [
-            *tracks.get("video", []),
-            *tracks.get("audio", []),
-            *tracks.get("broll", []),
-            *tracks.get("music", []),
-        ]:
-            src = clip.get("src")
+        for src in timeline_clip_srcs(manifest):
             if not src or src in media_urls:
                 continue
-            if isinstance(src, str) and (src.startswith("http://") or src.startswith("https://")):
+            if isinstance(src, str) and src.startswith("static:sfx/"):
+                media_urls[src] = "/" + src[len("static:"):]
+            elif isinstance(src, str) and (src.startswith("http://") or src.startswith("https://")):
                 media_urls[src] = src
-            else:
-                media_urls[src] = self.storage.presigned_download_url(src)
+            elif project_id is not None and is_project_object_key(src, project_id):
+                media_urls[src] = self.storage.public_download_url(src)
         return media_urls
 
-    def _media_urls_from_editor_document(self, editor_doc: dict) -> dict[str, str]:
-        """Presign asset object keys from the saved editor document (no timeline.v1 needed)."""
+    def _media_urls_from_editor_document(
+        self, editor_doc: dict, project_id: uuid.UUID | None = None
+    ) -> dict[str, str]:
+        """Presign asset object keys from the saved editor document (no timeline.v1 needed).
+
+        The document is client-supplied, so keys outside this project are never presigned.
+        """
         media_urls: dict[str, str] = {}
 
         def add(src: object) -> None:
             if not isinstance(src, str) or not src or src in media_urls:
                 return
+            if src.startswith("static:sfx/"):
+                media_urls[src] = "/" + src[len("static:"):]
+                return
             if src.startswith(("http://", "https://", "blob:", "data:", "/")):
                 media_urls[src] = src
                 return
-            # Object key (projects/... or similar)
-            if "/" in src or src.startswith("projects/"):
-                media_urls[src] = self.storage.presigned_download_url(src)
+            if project_id is not None and is_project_object_key(src, project_id):
+                media_urls[src] = self.storage.public_download_url(src)
 
         for asset in editor_doc.get("assets") or []:
             if not isinstance(asset, dict):
@@ -449,6 +491,15 @@ class EditorSnapshotService:
             meta = asset.get("metadata") or {}
             if isinstance(meta, dict):
                 add(meta.get("sourceKey"))
+                add(meta.get("proxyKey"))
+                add(meta.get("posterKey"))
+                add(meta.get("spriteKey"))
             add(asset.get("url"))
             add(asset.get("thumbnailUrl"))
+        for track in (editor_doc.get("timeline") or {}).get("tracks") or []:
+            for item in track.get("items") or []:
+                graphic = item.get("graphic") or {}
+                if isinstance(graphic, dict):
+                    add(graphic.get("src"))
+        add(((editor_doc.get("timeline") or {}).get("settings") or {}).get("backgroundImage"))
         return media_urls

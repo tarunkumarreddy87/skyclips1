@@ -13,8 +13,8 @@ export type TimelinePlayheadHandle = {
 };
 
 /**
- * Isolated playhead needle — position driven imperatively so scrubbing stays 60fps
- * without fighting React re-renders from throttled store writes.
+ * Isolated playhead needle — DOM position via transform + store.subscribe,
+ * so playhead ticks never re-render the timeline shell or clip rows.
  */
 export const TimelinePlayhead = forwardRef<
   TimelinePlayheadHandle,
@@ -31,7 +31,7 @@ export const TimelinePlayhead = forwardRef<
     const zoom = useEditorStore.getState().timeline.settings.zoom;
     const px = msToPx(ms, zoom);
     const el = rootRef.current;
-    if (el) el.style.left = `${px}px`;
+    if (el) el.style.transform = `translate3d(${px}px,0,0)`;
     if (labelRef.current) labelRef.current.textContent = formatTimecode(ms);
   };
 
@@ -39,7 +39,7 @@ export const TimelinePlayhead = forwardRef<
     setPositionPx(px, ms) {
       scrubbingRef.current = true;
       const el = rootRef.current;
-      if (el) el.style.left = `${px}px`;
+      if (el) el.style.transform = `translate3d(${px}px,0,0)`;
       if (labelRef.current && ms != null) {
         labelRef.current.textContent = formatTimecode(ms);
       }
@@ -66,14 +66,15 @@ export const TimelinePlayhead = forwardRef<
 
   const initialMs = useEditorStore.getState().ui.playheadMs;
   const initialZoom = useEditorStore.getState().timeline.settings.zoom;
+  const initialPx = msToPx(initialMs, initialZoom);
 
   return (
     <div
       ref={rootRef}
       data-timeline-playhead
-      className="absolute top-0 z-30 cursor-ew-resize touch-none"
+      className="absolute left-0 top-0 z-30 cursor-ew-resize touch-none will-change-transform"
       style={{
-        left: msToPx(initialMs, initialZoom),
+        transform: `translate3d(${initialPx}px,0,0)`,
         height: TIMELINE_RULER_HEIGHT + tracksAreaHeight,
       }}
       onPointerDown={onPointerDown}

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 from functools import lru_cache
+from pathlib import Path
 
 import boto3
 from botocore.client import Config
 
 from src.config import settings
 
-# Long TTL for Lambda renders that may retry or run 60+ minutes.
+# Long TTL for cloud renders that may retry or run 60+ minutes.
 PRESIGN_DOWNLOAD_EXPIRES_SEC = 86_400
 
 
@@ -50,13 +51,23 @@ def get_bytes(key: str) -> bytes:
     return response["Body"].read()
 
 
+def download_file(key: str, path: Path) -> None:
+    _s3_client().download_file(settings.s3_bucket, key, str(path))
+
+
+def put_file(key: str, path: Path, content_type: str) -> int:
+    _s3_client().upload_file(str(path), settings.s3_bucket, key,
+                             ExtraArgs={"ContentType": content_type})
+    return path.stat().st_size
+
+
 def put_bytes(key: str, data: bytes, content_type: str) -> int:
     _s3_client().put_object(Bucket=settings.s3_bucket, Key=key, Body=data, ContentType=content_type)
     return len(data)
 
 
 def presigned_download_url(key: str, expires_in: int = PRESIGN_DOWNLOAD_EXPIRES_SEC) -> str:
-    """Presigned GET for Remotion/Lambda — must use a host reachable from AWS."""
+    """Presigned GET for a client outside the storage network."""
     return _s3_public_client().generate_presigned_url(
         "get_object",
         Params={"Bucket": settings.s3_bucket, "Key": key},

@@ -2,20 +2,22 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "motion/react";
+import dynamic from "next/dynamic";
+import Link from "next/link";
+import { ArrowLeft, Check } from "lucide-react";
 import {
   Eye,
   ImageIcon,
+  Sparkles,
   Mic,
   Paintbrush,
-  Shield,
   Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { OverviewTab } from "@/components/brand-profiles/tabs/overview-tab";
-import { VoiceoverTab } from "@/components/brand-profiles/tabs/voiceover-tab";
-import { CreativeAssetsTab } from "@/components/brand-profiles/tabs/creative-assets-tab";
-import { ComplianceTab } from "@/components/brand-profiles/tabs/compliance-tab";
+const VoiceoverTab = dynamic(() => import("@/components/brand-profiles/tabs/voiceover-tab").then(m => m.VoiceoverTab), { loading: () => <p className="p-6 text-sm text-muted-foreground" role="status">Loading settings…</p> });
+const MotionGraphicsTab = dynamic(() => import("@/components/brand-profiles/tabs/motion-graphics-tab").then(m => m.MotionGraphicsTab));
+const CreativeAssetsTab = dynamic(() => import("@/components/brand-profiles/tabs/creative-assets-tab").then(m => m.CreativeAssetsTab), { loading: () => <p className="p-6 text-sm text-muted-foreground" role="status">Loading settings…</p> });
 import {
   useBrandProfileStore,
   type BrandProfile,
@@ -31,8 +33,8 @@ const TABS: Array<{
 }> = [
   { id: "overview", label: "Overview", icon: Eye },
   { id: "voiceover", label: "Voiceover", icon: Mic },
-  { id: "creative", label: "Creative Assets", icon: ImageIcon },
-  { id: "compliance", label: "Compliance", icon: Shield },
+  { id: "creative", label: "Media sources", icon: ImageIcon },
+  { id: "motion", label: "Motion graphics", icon: Sparkles },
 ];
 
 type BrandProfilesEditorProps = {
@@ -53,7 +55,7 @@ export function BrandProfilesEditor({ profileId, initialTab = "overview" }: Bran
   const stored = profiles.find((p) => p.id === resolvedId) ?? profiles[0];
 
   const [draft, setDraft] = useState<BrandProfile | null>(stored ?? null);
-  const [tab, setTab] = useState<BrandProfileTab>(initialTab);
+  const [tab, setTab] = useState<BrandProfileTab>(initialTab === "compliance" ? "creative" : initialTab);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -73,28 +75,30 @@ export function BrandProfilesEditor({ profileId, initialTab = "overview" }: Bran
     setDirty(false);
   }, [stored?.id, hydrated]); // eslint-disable-line react-hooks/exhaustive-deps -- reset draft when switching profile
 
+  useEffect(() => { router.prefetch("/studio"); }, [router]);
+
   function patchDraft(patch: Partial<BrandProfile>) {
     setDraft((prev) => (prev ? { ...prev, ...patch } : prev));
     setDirty(true);
   }
 
   function handleSave() {
-    if (!draft) return;
+    if (!draft || saving) return;
     setSaving(true);
     try {
+      const sources = draft.compliance.sourcing;
+      if (!sources.commercialStock && !sources.generalWebCrawling && !sources.aiGeneratedImages) throw new Error("Choose at least one media source.");
+      if (sources.aiGeneratedImages && !sources.imageModel) throw new Error("Choose an image generation model.");
       updateProfile(draft.id, draft);
       setActiveProfileId(draft.id);
       setDirty(false);
-      toast.success("Brand profile saved", {
-        description: "Opening Studio — your settings apply to every new video.",
-      });
+
       // Take the user to the creation pipeline (Studio) once the profile is saved.
       router.push("/studio");
     } catch (e) {
       toast.error("Could not save", {
         description: e instanceof Error ? e.message : "Check the profile name.",
       });
-    } finally {
       setSaving(false);
     }
   }
@@ -134,18 +138,18 @@ export function BrandProfilesEditor({ profileId, initialTab = "overview" }: Bran
   }
 
   return (
-    <div className="mx-auto w-full max-w-5xl space-y-8 pb-16">
+    <div className="mx-auto w-full channel-settings max-w-5xl flex flex-col gap-7 pb-16">
+      <Link href="/studio" className="flex w-fit items-center gap-2 text-sm text-muted-foreground hover:text-foreground"><ArrowLeft className="size-4" /> Back to studio</Link>
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <Paintbrush className="size-5 text-zinc-300" />
-            <h1 className="font-display text-2xl font-semibold tracking-tight text-white sm:text-3xl">
-              Brand profiles
+
+            <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+              Channel settings
             </h1>
           </div>
           <p className="mt-2 max-w-2xl text-sm text-zinc-400">
-            Set up channel-specific settings for editing style, voice, and content compliance that
-            apply to all your videos.
+            Your voice, visual style, and defaults. Ready for every new story.
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -164,10 +168,10 @@ export function BrandProfilesEditor({ profileId, initialTab = "overview" }: Bran
           <Button
             type="button"
             onClick={handleSave}
-            disabled={saving || !dirty}
-            className="rounded-lg bg-blue-600 px-4 text-white hover:bg-blue-500 disabled:opacity-50"
+            disabled={saving || !draft.name.trim()}
+            className="rounded-full px-5"
           >
-            {saving ? "Saving…" : "Save brand profile"}
+            <Check />{saving ? "Saving…" : "Save & return"}
             {dirty ? (
               <span className="ml-1.5 size-1.5 rounded-full bg-white/90" aria-hidden />
             ) : null}
@@ -186,10 +190,10 @@ export function BrandProfilesEditor({ profileId, initialTab = "overview" }: Bran
                 router.push(`/brand-profiles/${p.id}`);
               }}
               className={cn(
-                "rounded-full px-3 py-1 text-xs font-medium transition",
+                "rounded-full px-4 py-2 text-sm font-medium transition",
                 p.id === draft.id
-                  ? "bg-blue-600 text-white"
-                  : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-white",
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "bg-muted text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
             >
               {p.name}
@@ -198,7 +202,7 @@ export function BrandProfilesEditor({ profileId, initialTab = "overview" }: Bran
         </div>
       ) : null}
 
-      <nav className="flex gap-1 overflow-x-auto border-b border-white/8 pb-px">
+      <nav className="flex gap-1 overflow-x-auto rounded-2xl border border-border bg-muted/40 p-1.5">
         {TABS.map((t) => {
           const Icon = t.icon;
           const active = tab === t.id;
@@ -209,36 +213,25 @@ export function BrandProfilesEditor({ profileId, initialTab = "overview" }: Bran
               onClick={() => setTab(t.id)}
               className={cn(
                 "relative inline-flex items-center gap-2 whitespace-nowrap px-3 py-2.5 text-sm font-medium transition",
-                active ? "text-blue-400" : "text-zinc-400 hover:text-zinc-200",
+                active ? "rounded-xl bg-card text-foreground shadow-sm" : "rounded-xl text-muted-foreground hover:bg-accent hover:text-foreground",
               )}
             >
               <Icon className="size-4" />
               {t.label}
-              {active ? (
-                <motion.span
-                  layoutId="bp-tab-underline"
-                  className="absolute inset-x-2 -bottom-px h-0.5 rounded-full bg-blue-500 shadow-[0_0_12px_rgba(59,130,246,0.8)]"
-                />
-              ) : null}
+
             </button>
           );
         })}
       </nav>
 
-      <AnimatePresence mode="wait">
-        <motion.div
+        <div
           key={tab}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: 0.22, ease: "easeOut" }}
         >
+          {tab === "motion" ? <MotionGraphicsTab profile={draft} onChange={patchDraft} /> : null}
           {tab === "overview" ? <OverviewTab profile={draft} onChange={patchDraft} /> : null}
           {tab === "voiceover" ? <VoiceoverTab profile={draft} onChange={patchDraft} /> : null}
           {tab === "creative" ? <CreativeAssetsTab profile={draft} onChange={patchDraft} /> : null}
-          {tab === "compliance" ? <ComplianceTab profile={draft} onChange={patchDraft} /> : null}
-        </motion.div>
-      </AnimatePresence>
+        </div>
     </div>
   );
 }

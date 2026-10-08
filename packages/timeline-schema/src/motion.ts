@@ -85,8 +85,8 @@ export const ANIMATION_PRESET_FFMPEG_HINT: Record<AnimationPreset, string> = {
   zoom_out: "zoompan zoom='…'",
   ken_burns_in: "zoompan z/x/y over clip",
   ken_burns_out: "zoompan z/x/y over clip",
-  parallax_pan_in: "Remotion dual-layer translate",
-  parallax_pan_out: "Remotion dual-layer translate + fade",
+  parallax_pan_in: "Native translate",
+  parallax_pan_out: "Native translate + fade",
   drop: "overlay y expr + fade",
   slide: "overlay x expr",
   wipe: "wipeleft/wiperight style crop/enable",
@@ -101,7 +101,7 @@ export const LOOP_PRESET_FFMPEG_HINT: Record<LoopPreset, string> = {
   pulse: "scale expr oscillating",
   ken_burns: "zoompan continuous",
   float: "overlay y expr oscillating",
-  parallax_pan: "Remotion dual-layer parallax pan",
+  parallax_pan: "Native parallax pan",
 };
 
 export const DEFAULT_ANIMATION_DURATION_SEC = 0.6;

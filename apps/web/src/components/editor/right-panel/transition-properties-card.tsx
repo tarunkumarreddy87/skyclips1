@@ -73,7 +73,7 @@ export function TransitionPropertiesCard({ transition }: { transition: Transitio
         Remove (hard cut)
       </Button>
       <p className="text-[9px] leading-snug text-zinc-600">
-        Non-cut types export via Remotion. Live preview is CSS-approximate.
+        Transitions use the same timing in preview and export.
       </p>
     </div>
   );

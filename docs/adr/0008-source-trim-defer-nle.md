@@ -37,6 +37,6 @@ ADR 0003 keeps **full timeline editor / NLE** out of MVP. We need a narrow, FFmp
 
 ## Consequences
 
-- Trim finally matches export for A-roll and narration without Remotion
+- Trim finally matches export for A-roll and narration with the native pipeline
 - Schema remains additive/optional — older manifests validate as `source_start_sec` omitted (= 0)
 - NLE-grade editing stays out of MVP with a clear refusal path

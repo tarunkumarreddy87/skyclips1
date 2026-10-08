@@ -1,12 +1,14 @@
 /**
- * Robust HTMLAudioElement transport for editor preview.
+ * Robust HTMLAudioElement transport for editor preview (CSS fallback path).
+ *
+ * HTML audio buses follow the editor absolute-time playback clock.
  *
  * Design rules (these prevent the "voice repeating / stuttering" bug):
  *  1. syncPreviewAudio is idempotent per bus + clip — calling it repeatedly with the
  *     same clip/src/shouldPlay must NOT pause-seek-replay. It only acts on real changes.
  *  2. Drift correction never seeks BACKWARD while playing (that rewinds voice and sounds
  *     like a stutter/repeat). Only catch forward when audio lags; when audio leads,
- *     report so the playhead can catch up instead.
+ *     report `audio_ahead`.
  *  3. Seeking while paused (scrubbing) is allowed and cheap.
  *  4. Preload narration/music/sfx while paused so Play is not a cold network start.
  */
@@ -28,7 +30,7 @@ export type DriftCorrectionResult =
       audioTimeSec: number;
     };
 
-/** Shared gate: RAF playhead freezes until preview narration bus can play. */
+/** Shared gate: the RAF playhead freezes until narration can play. */
 let previewAudioGateBlocked = false;
 const previewAudioGateListeners = new Set<() => void>();
 
@@ -271,7 +273,7 @@ export function syncPreviewAudio(opts: {
   };
 
   // Cold start or deep seek: wait until the element can play so voice is not silent
-  // while the Remotion playhead races ahead.
+  // while the native engine playhead races ahead.
   if (srcChanged || audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
     if (awaitingStart && !srcChanged && !clipChanged) {
       // Already waiting for canplay for this clip/src — do not stack waiters.
@@ -302,7 +304,8 @@ export function syncPreviewAudio(opts: {
  *
  * CRITICAL: never seek backward — rewinding the media element re-plays the last
  * half-second of voice ("stutter / repeat"). When audio leads the playhead, report
- * `audio_ahead` so the caller can advance the UI clock instead.
+ * `audio_ahead`. Preview callers must keep the RAF clock as playhead authority and
+ * must not `setPlayhead` from this result (hold/wait the bus instead).
  */
 export function driftCorrectAudio(
   audio: HTMLAudioElement | null,
@@ -323,8 +326,29 @@ export function driftCorrectAudio(
     return { action: "seek_forward" };
   }
 
-  // Audio ahead — do NOT rewind. Caller should catch the playhead up to the audio clock.
+  // Audio ahead — do NOT rewind. Caller decides policy (never advance the playhead).
   return { action: "audio_ahead", audioTimeSec: audio.currentTime };
+}
+
+/**
+ * When HTML audio leads the preview clock by more than `maxLeadSec`,
+ * pause the bus so voice does not race ahead of buffered picture. Caller should
+ * resume once drift is within threshold (see preview-section drift loop).
+ */
+export function holdAudioIfFarAhead(
+  audio: HTMLAudioElement | null,
+  targetSec: number,
+  maxLeadSec = 0.9,
+): boolean {
+  if (!audio || audio.paused || audio.ended) return false;
+  const lead = audio.currentTime - targetSec;
+  if (lead <= maxLeadSec) return false;
+  try {
+    audio.pause();
+  } catch {
+    return false;
+  }
+  return true;
 }
 
 /**

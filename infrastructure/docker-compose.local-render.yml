@@ -1,0 +1,6 @@
+# Native rendering uses the existing cloud worker on the local Compose network.
+# From infrastructure/: docker compose --env-file ../.env -f docker-compose.yml -f docker-compose.local-render.yml up -d --build orchestrator media
+services:
+  media:
+    environment:
+      RENDER_ENGINE: native

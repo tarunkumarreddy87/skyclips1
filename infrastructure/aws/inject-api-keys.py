@@ -1,4 +1,4 @@
-"""Inject OPENROUTER/PEXELS/SARVAM keys from repo .env into ECS task defs. Do not commit secrets."""
+"""Inject provider keys from repo .env into ECS task defs. Do not commit secrets."""
 from __future__ import annotations
 
 import json
@@ -10,7 +10,7 @@ from pathlib import Path
 
 REGION = "us-east-1"
 CLUSTER = "hanuman-prod"
-NEEDED = ("OPENROUTER_API_KEY", "PEXELS_API_KEY", "SARVAM_API_KEY")
+NEEDED = ("OPENROUTER_API_KEY", "PEXELS_API_KEY", "SARVAM_API_KEY", "SERPAPI_API_KEY")
 FAMILIES = (
     ("hanuman-prod-api", "api"),
     ("hanuman-prod-orchestrator", "orchestrator"),

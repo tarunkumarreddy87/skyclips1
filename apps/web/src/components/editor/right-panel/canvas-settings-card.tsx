@@ -21,7 +21,7 @@ export function CanvasSettingsCard() {
         <div className="min-w-0 pr-2">
           <Label className="text-[10px] text-zinc-500">Transitions</Label>
           <p className="text-[9px] leading-snug text-zinc-600">
-            On → blends in Remotion. Off → hard cuts (still Remotion export).
+            Blend neighboring scenes, or turn off for hard cuts.
           </p>
         </div>
         <Switch
@@ -50,6 +50,7 @@ export function CanvasSettingsCard() {
             { key: "narrationVolume" as const, label: "Narration" },
             { key: "musicVolume" as const, label: "Music" },
             { key: "sfxVolume" as const, label: "SFX + whooshes" },
+            { key: "clipAudioVolume" as const, label: "Original footage" },
           ] as const
         ).map(({ key, label }) => (
           <div key={key} className="space-y-1">
@@ -66,11 +67,11 @@ export function CanvasSettingsCard() {
           </div>
         ))}
         <p className="text-[9px] leading-snug text-zinc-600">
-          Clip media audio is preview-only (Remotion Player). Export MP4 uses narration/music/sfx buses — not A-roll audio. Playback speed is preview-only (export is 1×).
+          Unmuted footage joins the export mix. Playback speed changes the preview only.
         </p>
       </div>
 
-      <div className="space-y-1">
+      <details className="text-xs text-zinc-400"><summary className="cursor-pointer py-1">Advanced timeline controls</summary><div className="space-y-1 pt-2">
         <Label className="text-[10px] text-zinc-500">Zoom</Label>
         <Slider
           value={[settings.zoom]}
@@ -79,7 +80,7 @@ export function CanvasSettingsCard() {
           step={1}
           onValueChange={(v) => updateSettings({ zoom: sliderValue(v) })}
         />
-      </div>
+      </div></details>
 
       <Button
         variant="outline"

@@ -28,6 +28,7 @@ async def main() -> None:
         client,
         task_queue=settings.temporal_task_queue_media,
         activities=[render_video],
+        max_concurrent_activities=settings.media_max_concurrent_activities,
     )
 
     logger.info("Media worker started on queue '%s'", settings.temporal_task_queue_media)

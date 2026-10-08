@@ -1,11 +1,6 @@
 import { MongoClient } from "mongodb";
 
-const uri = process.env.MONGODB_URI;
-
-if (!uri) {
-  // Allow build without Atlas; runtime auth routes will fail clearly.
-  console.warn("[mongo] MONGODB_URI is not set");
-}
+const uri = process.env.MONGODB_URI?.trim() || "";
 
 declare global {
   // eslint-disable-next-line no-var
@@ -13,21 +8,29 @@ declare global {
 }
 
 function createClientPromise(): Promise<MongoClient> {
-  const client = new MongoClient(uri ?? "mongodb://127.0.0.1:27017/skyclip");
+  if (!uri) {
+    return Promise.reject(new Error("[mongo] MONGODB_URI is not set"));
+  }
+  // Short server selection so a missing/unreachable DB fails fast (e.g. local dev
+  // without billing) instead of hanging the request for the 30s default.
+  const client = new MongoClient(uri, { serverSelectionTimeoutMS: 3000 });
   return client.connect();
 }
 
-const clientPromise =
-  globalThis._mongoClientPromise ?? createClientPromise();
-
-if (process.env.NODE_ENV !== "production") {
-  globalThis._mongoClientPromise = clientPromise;
-}
-
-export default clientPromise;
-
 export async function getDb() {
-  const client = await clientPromise;
+  let clientPromise = globalThis._mongoClientPromise;
+  if (!clientPromise) {
+    clientPromise = createClientPromise();
+    globalThis._mongoClientPromise = clientPromise;
+  }
+  // A failed connect must not stay cached — drop it so a later call can retry
+  // (e.g. after MONGODB_URI becomes available or the DB comes back up).
+  const client = await clientPromise.catch((err) => {
+    if (globalThis._mongoClientPromise === clientPromise) {
+      globalThis._mongoClientPromise = undefined;
+    }
+    throw err;
+  });
   const dbName = process.env.MONGODB_DB_NAME ?? "skyclip";
   return client.db(dbName);
 }

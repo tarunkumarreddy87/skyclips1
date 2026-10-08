@@ -18,14 +18,6 @@ Parameters:
     Type: String
   RenderServiceImageUri:
     Type: String
-  RemotionFunctionName:
-    Type: String
-    Default: remotion-render-4-0-489-mem2048mb-disk2048mb-120sec
-  RemotionServeUrl:
-    Type: String
-  RemotionBucketName:
-    Type: String
-    Default: remotionlambda-useast1-bpvm9ei88s
   OpenRouterApiKey:
     Type: String
     NoEcho: true
@@ -235,23 +227,6 @@ Resources:
                 Resource:
                   - !GetAtt ArtifactsBucket.Arn
                   - !Sub "${ArtifactsBucket.Arn}/*"
-        - PolicyName: RemotionLambdaInvoke
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - lambda:InvokeFunction
-                  - lambda:GetFunction
-                Resource: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:remotion-render-*"
-              - Effect: Allow
-                Action:
-                  - s3:GetObject
-                  - s3:PutObject
-                  - s3:ListBucket
-                Resource:
-                  - !Sub "arn:aws:s3:::${RemotionBucketName}"
-                  - !Sub "arn:aws:s3:::${RemotionBucketName}/*"
 
   # --- ALB ---
   ApplicationLoadBalancer:

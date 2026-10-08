@@ -2,9 +2,34 @@
 
 from __future__ import annotations
 
+import logging
+
 import httpx
+from temporalio.exceptions import ApplicationError
 
 from src.config import settings
+
+logger = logging.getLogger(__name__)
+
+# Statuses worth retrying (API overloaded, restarting, or a dependency briefly down).
+_RETRYABLE_STATUS = frozenset({408, 429})
+
+
+def _raise_for_api_status(response: httpx.Response, action: str) -> None:
+    """Map a non-2xx API response onto Temporal retry semantics.
+
+    408/429/5xx raise a retryable error so the activity retry policy tries again.
+    Any other status (401/404/422, unexpected redirects) can never succeed on
+    retry, so it is raised as non-retryable instead of retrying indefinitely.
+    httpx transport errors are not caught here and stay retryable.
+    """
+    if response.is_success:
+        return
+    status = response.status_code
+    message = f"API {action} failed (HTTP {status}): {response.text[:300]}"
+    if status in _RETRYABLE_STATUS or status >= 500:
+        raise ApplicationError(message, type="ApiCallbackUnavailable")
+    raise ApplicationError(message, type="ApiCallbackRejected", non_retryable=True)
 
 
 class ApiClient:
@@ -35,7 +60,17 @@ class ApiClient:
             "artifactType": artifact_type,
         }
         async with httpx.AsyncClient(timeout=30.0) as client:
-            await client.post(f"{self.base}/internal/progress-events", json=payload, headers=self.headers)
+            response = await client.post(f"{self.base}/internal/progress-events", json=payload, headers=self.headers)
+        if not response.is_success:
+            # Progress is best-effort UX; never fail an activity over a dropped event.
+            logger.warning(
+                "Progress event rejected by API (HTTP %s) run=%s stage=%s status=%s: %s",
+                response.status_code,
+                run_id,
+                stage,
+                status,
+                response.text[:300],
+            )
 
     async def register_artifact(
         self,
@@ -59,7 +94,7 @@ class ApiClient:
         }
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(f"{self.base}/internal/artifacts", json=payload, headers=self.headers)
-            response.raise_for_status()
+            _raise_for_api_status(response, "register_artifact")
             return response.json()["artifactId"]
 
     async def update_run_status(
@@ -78,8 +113,9 @@ class ApiClient:
             "projectStatus": project_status,
         }
         async with httpx.AsyncClient(timeout=30.0) as client:
-            await client.post(
+            response = await client.post(
                 f"{self.base}/internal/runs/{run_id}/status",
                 json=payload,
                 headers=self.headers,
             )
+            _raise_for_api_status(response, "update_run_status")

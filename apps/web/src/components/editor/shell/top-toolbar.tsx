@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { getLatestRun, startRender, subscribeProgress } from "@/lib/api-client";
 import { validateEditorStateForRender } from "@/lib/editor/validate-render";
 import { cn } from "@/lib/utils";
+import { renderStagePercent } from "@/lib/render-progress";
 
 interface TopToolbarProps {
   projectId: string;
@@ -63,7 +64,9 @@ export function TopToolbar({ projectId }: TopToolbarProps) {
     setRenderStatus("running");
     const unsubscribe = subscribeProgress(projectId, (event) => {
       if (event.runId !== renderRunId) return;
-      if (typeof event.percent === "number") setRenderPercent(event.percent);
+      if (event.stage === "enqueue_render" && typeof event.percent === "number") {
+        setRenderPercent(renderStagePercent(event.percent));
+      }
       if (event.status === "failed") setRenderStatus("failed");
     });
 
@@ -92,7 +95,7 @@ export function TopToolbar({ projectId }: TopToolbarProps) {
   }, [projectId, renderRunId, renderStatus, router]);
 
   return (
-    <header className="relative z-20 flex h-12 shrink-0 items-center border-b border-white/[0.06] bg-[#111111] px-3 sm:h-[48px] sm:px-4">
+    <header className="editor-top-toolbar relative z-20 flex h-12 shrink-0 items-center border-b border-border bg-background px-3 sm:h-[48px] sm:px-4">
       {/* Left — tools (same order; panel toggles open/close) */}
       <div className="flex min-w-0 flex-1 items-center gap-0.5">
         <Link
@@ -116,14 +119,10 @@ export function TopToolbar({ projectId }: TopToolbarProps) {
         ))}
       </div>
 
-      {/* Center — project title. Absolutely centered but with safe padding so it
-          never shoves into the left tools or right cluster at narrow widths. */}
-      <div className="pointer-events-none absolute inset-x-0 flex justify-center px-4 sm:hidden">
-        {/* Mobile: just a back chevron is enough context; title is hidden to save space. */}
-      </div>
+      {/* Keep the title out of the tool cluster until the toolbar has room for it. */}
       <button
         type="button"
-        className="pointer-events-auto absolute left-1/2 hidden max-w-[min(360px,34vw)] -translate-x-1/2 items-center gap-1.5 truncate rounded-lg px-2 py-1 text-[13px] font-medium tracking-tight text-zinc-200 transition hover:bg-white/[0.04] md:flex"
+        className="pointer-events-auto absolute left-1/2 hidden max-w-[min(360px,34vw)] -translate-x-1/2 items-center gap-1.5 truncate rounded-lg px-2 py-1 text-[13px] font-medium tracking-tight text-zinc-200 transition hover:bg-white/[0.04] lg:flex"
         onClick={() => setInfoOpen(true)}
         title="Project info"
       >
@@ -182,7 +181,7 @@ export function TopToolbar({ projectId }: TopToolbarProps) {
               setRenderPercent(0);
               setRenderStatus("running");
               toast.message("Rendering your edits", {
-                description: "Remotion export of the live timeline.",
+                description: "native engine export of the live timeline.",
               });
               router.push(`/projects/${projectId}/video`);
             } catch (e) {

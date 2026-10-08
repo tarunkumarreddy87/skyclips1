@@ -84,17 +84,19 @@ export function QuoteReview({ project }: QuoteReviewProps) {
   }
 
   async function handleApprove() {
+    if (!quote) return;
     setLoading(true);
     setError(null);
     try {
+      let quoteToApprove = quote;
       if (canEdit) {
-        await updateQuote(project.id, {
+        quoteToApprove = await updateQuote(project.id, {
           durationSec: Number(durationSec),
           voiceId,
           brandProfileId: themeId,
         });
       }
-      const approved = await approveQuote(project.id);
+      const approved = await approveQuote(project.id, quoteToApprove.id);
       setQuote(approved);
       setAutoGenerate(true);
       router.refresh();
@@ -194,8 +196,8 @@ export function QuoteReview({ project }: QuoteReviewProps) {
                 </dd>
               </div>
               <div>
-                <dt style={{ fontSize: "0.75rem", color: "#6b7280" }}>Credit estimate</dt>
-                <dd style={{ margin: 0 }}>{quote.creditEstimate} credits (informational)</dd>
+                <dt style={{ fontSize: "0.75rem", color: "#6b7280" }}>Credits used when generation starts</dt>
+                <dd style={{ margin: 0 }}>{quote.creditEstimate} credits · about {Math.ceil(quote.durationSec / 60)} video minutes</dd>
               </div>
               {quote.warnings && quote.warnings.length > 0 ? (
                 <div>

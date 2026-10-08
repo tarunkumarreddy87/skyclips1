@@ -56,7 +56,10 @@ async def test_quote_generate_update_approve(client: AsyncClient):
     assert patch_res.json()["durationSec"] == 240
     assert patch_res.json()["voiceId"] == "anushka"
 
-    approve_res = await client.post(f"/projects/{project['id']}/approve")
+    approve_res = await client.post(
+        f"/projects/{project['id']}/approve",
+        json={"quoteId": patch_res.json()["id"]},
+    )
     assert approve_res.status_code == 200
     assert approve_res.json()["status"] == "approved"
 
@@ -74,8 +77,10 @@ async def test_cannot_approve_without_quote(client: AsyncClient):
 @pytest.mark.integration
 async def test_cannot_quote_when_approved(client: AsyncClient):
     project = await _create_project(client)
-    await client.post(f"/projects/{project['id']}/quote")
-    await client.post(f"/projects/{project['id']}/approve")
+    quote = await client.post(f"/projects/{project['id']}/quote")
+    await client.post(
+        f"/projects/{project['id']}/approve", json={"quoteId": quote.json()["id"]}
+    )
 
     res = await client.post(f"/projects/{project['id']}/quote")
     assert res.status_code == 409

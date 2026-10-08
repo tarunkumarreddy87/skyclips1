@@ -77,7 +77,7 @@ Full JSON Schema: `packages/timeline-schema/schema/timeline.v2.json`.
 
 ## 3. Render consumer per track type (FFmpeg vs compositor)
 
-**Current stack:** FFmpeg only (`workers/media/src/render/ffmpeg_pipeline.py`). **No Remotion** in `packages/`, `workers/`, or `apps/`. No BullMQ render manifests.
+**Historical proposal:** This rendering section is superseded by ADR 0012. Original stack: FFmpeg only (`workers/media/src/render/ffmpeg_pipeline.py`). **No owned SVG compositor** in `packages/`, `workers/`, or `apps/`. No BullMQ render manifests.
 
 | Track | Render component | Feasibility | Notes |
 |-------|------------------|-------------|-------|
@@ -87,9 +87,9 @@ Full JSON Schema: `packages/timeline-schema/schema/timeline.v2.json`.
 | **music[]** | FFmpeg `amix` / `volume` / `afade` | ✅ Phase 6 | Mix music under narration with manifest volumes. Requires music `src` assets in S3. |
 | **sfx[]** | FFmpeg `adelay` + `amix` | ✅ Phase 6 | Short clips at `start_sec`. Same asset gap as music. |
 | **transitions[]** | FFmpeg `xfade` | ✅ Phase 7 (partial) | **fade**, **slide** between consecutive video segments via `xfade` filter chain. **zoom**, **blur**, **theme** are not native xfade types — need custom expressions or pre-rendered transition clips (**harder**, may defer to Phase 7b or map to fade). |
-| **broll[]** | FFmpeg `overlay` | ⚠️ Phase 8 | **PiP / full-bleed overlay at timestamps:** `filter_complex` overlay on base video. **Multiple overlapping broll + complex z-order:** still FFmpeg-feasible but graph complexity grows. **Replace mode** (broll covers base for interval): overlay full-frame. Does **not** require Remotion for MVP broll. |
-| **text_overlays[]** | FFmpeg `drawtext` **or** compositor | ⚠️ Phase 9 decision | **drawtext burn-in:** fast, matches “rendered output” for export, but text is **baked into pixels** — re-edit requires manifest change + re-render (acceptable for Vidrush-like “edit then re-render” if manifest is SSOT). **Compositor (Remotion/custom):** needed for live WYSIWYG preview = final pixel-perfect motion graphics, complex fonts, animations. **Recommendation:** Phase 9 ship **drawtext** for static text; defer motion/animation to Phase 10 or pre-rendered overlay videos on `broll[]`. |
-| **animations[]** (Subscribe CTA, motion graphics) | Compositor **or** pre-rendered video on `broll[]` | ❌ FFmpeg alone | FFmpeg has no motion-graphics engine. **Options:** (1) Treat as **short MP4/WebM overlay** on `broll[]` (FFmpeg overlay) — ship subset in Phase 10; (2) Adopt **Remotion** (or similar) — large stack change. **Do not start Phase 10 without product priority.** |
+| **broll[]** | FFmpeg `overlay` | ⚠️ Phase 8 | **PiP / full-bleed overlay at timestamps:** `filter_complex` overlay on base video. **Multiple overlapping broll + complex z-order:** still FFmpeg-feasible but graph complexity grows. **Replace mode** (broll covers base for interval): overlay full-frame. Does **not** require owned SVG compositor for MVP broll. |
+| **text_overlays[]** | FFmpeg `drawtext` **or** compositor | ⚠️ Phase 9 decision | **drawtext burn-in:** fast, matches “rendered output” for export, but text is **baked into pixels** — re-edit requires manifest change + re-render (acceptable for Vidrush-like “edit then re-render” if manifest is SSOT). **Compositor (owned SVG compositor/custom):** needed for live WYSIWYG preview = final pixel-perfect motion graphics, complex fonts, animations. **Recommendation:** Phase 9 ship **drawtext** for static text; defer motion/animation to Phase 10 or pre-rendered overlay videos on `broll[]`. |
+| **animations[]** (Subscribe CTA, motion graphics) | Compositor **or** pre-rendered video on `broll[]` | ❌ FFmpeg alone | FFmpeg has no motion-graphics engine. **Options:** (1) Treat as **short MP4/WebM overlay** on `broll[]` (FFmpeg overlay) — ship subset in Phase 10; (2) Adopt **owned SVG compositor** (or similar) — large stack change. **Do not start Phase 10 without product priority.** |
 
 ### Proposed v2 render pipeline (single FFmpeg graph)
 
@@ -172,7 +172,7 @@ Default for first render proof: **ship 1–2 local CC0 files** in repo → uploa
 | Approach | Editable after generation? | Preview fidelity | Effort |
 |----------|---------------------------|------------------|--------|
 | **Manifest SSOT + drawtext re-render** | Yes — edit manifest in editor, re-render | Preview approximates (canvas CSS ≠ drawtext) | Medium |
-| **Compositor (Remotion)** | Yes — preview = render | High | Large (new dependency, React render farm) |
+| **Compositor (owned SVG compositor)** | Yes — preview = render | High | Large (new dependency, React render farm) |
 | **Burn-in only, no manifest round-trip** | No | N/A | Small (not Vidrush parity) |
 
 **Recommendation:** Manifest SSOT + FFmpeg `drawtext` for Phase 9. Editor canvas already edits `text_overlays[]` fields; preview uses CSS approximation; export uses render. Matches “edit then re-render” if users expect final pixel output from server render.
@@ -217,7 +217,7 @@ No new lanes required — map manifest tracks to Phase 2 editor lanes:
 1. **Caption style defaults** — single bottom-center template vs per-theme presets?
 2. **Transition types in v2.0** — ship `fade` + `slide` only; map editor `zoom`/`blur`/`theme` to fade until compositor exists?
 3. **Music default** — always add a bed in `build_timeline` or only when user adds in editor?
-4. **Phase 10** — motion graphics as MP4 overlays vs Remotion investment?
+4. **Phase 10** — motion graphics as MP4 overlays vs owned SVG compositor investment?
 
 ---
 

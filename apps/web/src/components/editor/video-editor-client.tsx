@@ -9,7 +9,7 @@ const VideoEditorPage = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-3 bg-[#111111] text-[#9E9E9E]">
+      <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center gap-3 bg-background text-muted-foreground">
         <Loader2 className="size-8 animate-spin text-[#2563EB]" />
         <p className="text-sm">Loading editor…</p>
       </div>

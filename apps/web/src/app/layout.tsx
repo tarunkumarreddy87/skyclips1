@@ -2,13 +2,14 @@ import type { Metadata } from "next";
 import { ThemeProvider } from "@/components/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
+import { ProtectedSession } from "@/components/auth/protected-session";
 import {
   PRODUCT_DESCRIPTION,
   PRODUCT_NAME,
   PRODUCT_TAGLINE,
 } from "@/lib/brand";
-import { cn } from "@/lib/utils";
 import "./globals.css";
+import "@/components/editor/editor-agent.css";
 
 export const metadata: Metadata = {
   title: `${PRODUCT_NAME} — ${PRODUCT_TAGLINE}`,
@@ -28,18 +29,18 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
     <html
       lang="en"
       suppressHydrationWarning
-      className={cn("dark font-sans", "font-vars-production")}
+      className="font-sans font-vars-production"
     >
-      <body className="min-h-screen bg-[#1a1a1a] font-sans antialiased text-foreground">
+      <body className="min-h-screen bg-background font-sans antialiased text-foreground">
         <ThemeProvider
           attribute="class"
           defaultTheme="dark"
-          forcedTheme="dark"
+          themes={["dark", "black", "light"]}
           enableSystem={false}
           disableTransitionOnChange
         >
           <TooltipProvider>
-            {children}
+            <ProtectedSession>{children}</ProtectedSession>
             <Toaster />
           </TooltipProvider>
         </ThemeProvider>

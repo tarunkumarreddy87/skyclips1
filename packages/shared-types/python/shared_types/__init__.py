@@ -18,7 +18,12 @@ from shared_types.themes import (
 from shared_types.motion_templates import (
     CATALOG as MOTION_TEMPLATE_CATALOG,
     MEDIA_TEMPLATE_IDS,
+    MOTION_GRAPHIC_MANIFEST_TYPES,
+    SHIPPED_MOTION_GRAPHIC_IDS,
+    default_slots_for_template,
     get_template,
+    get_template_by_label,
+    shipped_motion_graphics,
     still_clip_ken_burns_animation,
     still_clip_parallax_pan_animation,
 )
@@ -39,7 +44,12 @@ __all__ = [
     "resolve_theme_id",
     "MOTION_TEMPLATE_CATALOG",
     "MEDIA_TEMPLATE_IDS",
+    "MOTION_GRAPHIC_MANIFEST_TYPES",
+    "SHIPPED_MOTION_GRAPHIC_IDS",
+    "default_slots_for_template",
     "get_template",
+    "get_template_by_label",
+    "shipped_motion_graphics",
     "still_clip_ken_burns_animation",
     "still_clip_parallax_pan_animation",
 ]

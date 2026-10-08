@@ -10,7 +10,7 @@ Accepted (product override of ADR 0003 “advanced motion graphics”)
 
 ## Context
 
-ADR 0003 lists advanced motion graphics as post-MVP. ADR 0005 limited the motion lane to template overlays (Subscribe CTA, chapter titles). Product wants Canva/Vidrush-style **canvas transform** (move / resize / rotate) and **In / Out / Loop / Zoom** animation presets plus expanded clip-boundary transitions. Schema work (this ADR) originally targeted FFmpeg-native filters; **export compositing is superseded by [ADR 0009](./0009-remotion-render-path.md)** (Remotion). Schema fields remain the SSOT.
+ADR 0003 lists advanced motion graphics as post-MVP. ADR 0005 limited the motion lane to template overlays (Subscribe CTA, chapter titles). Product wants Canva/Vidrush-style **canvas transform** (move / resize / rotate) and **In / Out / Loop / Zoom** animation presets plus expanded clip-boundary transitions. Schema work (this ADR) originally targeted FFmpeg-native filters; **export compositing is superseded by [ADR 0012](./0012-native-video-engine.md)** (owned video engine). Schema fields remain the SSOT.
 
 Phase 0 confirmed: timeline.v1 clips have no `transform`/`animation`; `toAbsoluteTimeline` does not exist (timing is already absolute); local FFmpeg exposes `xfade`, `zoompan`, `fade`, `overlay`, `rotate`.
 

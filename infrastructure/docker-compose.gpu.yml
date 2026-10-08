@@ -1,0 +1,14 @@
+# Optional NVIDIA acceleration for a local laptop or a GPU render host.
+# Add this file after docker-compose.yml when starting render-service.
+services:
+  render-service:
+    environment:
+      RENDER_ENCODER: auto
+      NVIDIA_DRIVER_CAPABILITIES: compute,video,utility,graphics
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

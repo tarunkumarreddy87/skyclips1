@@ -10,9 +10,36 @@ import { createEditorState } from "./mock-data";
 import { mapTimelineResponseToEditorState } from "./manifest-mapper";
 import { withRefreshedCaptionWordClocks } from "./caption-groups";
 import { EditorLoadError } from "./editor-load-error";
+import { extractS3KeyOrPassthrough } from "./build-timeline-manifest";
 
 /** Set when user opts into mock timeline after API is unreachable. */
 let mockFallbackRequested = false;
+
+/**
+ * Handoff from the "Open editor" preloader to `store.init`, so the editor page
+ * renders the timeline it already downloaded instead of fetching it twice.
+ */
+let preloaded: { projectId: string; state: EditorState; at: number } | null = null;
+
+export function stashPreloadedEditorState(projectId: string, state: EditorState): void {
+  preloaded = { projectId, state, at: Date.now() };
+}
+
+/** Consumed once; presigned mediaUrls go stale, so ignore anything older than the TTL. */
+export function takePreloadedEditorState(
+  projectId: string,
+  maxAgeMs = 60_000,
+): EditorState | null {
+  if (!preloaded || preloaded.projectId !== projectId) return null;
+  const fresh = Date.now() - preloaded.at <= maxAgeMs;
+  const state = preloaded.state;
+  preloaded = null;
+  return fresh ? state : null;
+}
+
+export function clearPreloadedEditorState(): void {
+  preloaded = null;
+}
 
 export function requestEditorMockFallback(): void {
   mockFallbackRequested = true;
@@ -53,41 +80,82 @@ function isEditorDocument(
 }
 
 /** Re-apply fresh mediaUrls so preview works after presigned URL expiry. */
-function refreshAssetUrls(assets: Asset[], mediaUrls: Record<string, string>): Asset[] {
+export function refreshAssetUrls(assets: Asset[], mediaUrls: Record<string, string>): Asset[] {
   return assets.map((asset) => {
-    const key = asset.metadata?.sourceKey;
-    if (key && mediaUrls[key]) {
-      const url = mediaUrls[key];
-      return {
-        ...asset,
-        url,
-        thumbnailUrl: asset.mediaType === "image" ? url : asset.thumbnailUrl,
-      };
+    const meta = { ...(asset.metadata || {}) };
+    let url = asset.url;
+    let thumbnailUrl = asset.thumbnailUrl;
+
+    const sourceKey = meta.sourceKey;
+    if (sourceKey && mediaUrls[sourceKey]) {
+      url = mediaUrls[sourceKey];
+      if (asset.mediaType === "image") thumbnailUrl = url;
+    } else if (mediaUrls[asset.url]) {
+      url = mediaUrls[asset.url];
     }
-    if (mediaUrls[asset.url]) {
-      return { ...asset, url: mediaUrls[asset.url] };
+
+    const proxyKey = meta.proxyKey;
+    if (proxyKey && mediaUrls[proxyKey]) {
+      meta.proxyUrl = mediaUrls[proxyKey];
     }
-    return asset;
+    const posterKey = meta.posterKey;
+    if (posterKey && mediaUrls[posterKey]) {
+      meta.posterUrl = mediaUrls[posterKey];
+      if (asset.mediaType === "video") {
+        thumbnailUrl = mediaUrls[posterKey];
+      }
+    }
+    const spriteKey = meta.spriteKey;
+    if (spriteKey && mediaUrls[spriteKey]) {
+      meta.spriteUrl = mediaUrls[spriteKey];
+    }
+
+    // Prefer refreshed poster over stale thumbnail when present.
+    if (meta.posterUrl && asset.mediaType === "video") {
+      thumbnailUrl = meta.posterUrl;
+    }
+
+    return {
+      ...asset,
+      url,
+      thumbnailUrl,
+      metadata: Object.keys(meta).length ? meta : asset.metadata,
+    };
   });
 }
 
 /** Keep clip thumbnailUrl in sync with refreshed assets (Image/B-roll lane). */
-function refreshClipThumbnails(timeline: Timeline, assets: Asset[]): Timeline {
+export function refreshClipThumbnails(timeline: Timeline, assets: Asset[], oldAssets: Asset[] = assets, mediaUrls: Record<string, string> = {}): Timeline {
   const byId = new Map(assets.map((a) => [a.id, a]));
+  const graphicsSrcs = new Map<string, string>();
+  for (const old of oldAssets) {
+    const refreshed = byId.get(old.id);
+    if (refreshed) { graphicsSrcs.set(old.url, refreshed.url); if (old.metadata?.sourceKey) graphicsSrcs.set(old.metadata.sourceKey, refreshed.url); }
+  }
   return {
     ...timeline,
+    settings: { ...timeline.settings, backgroundImage: timeline.settings.backgroundImage ? mediaUrls[extractS3KeyOrPassthrough(timeline.settings.backgroundImage)] ?? timeline.settings.backgroundImage : null },
     tracks: timeline.tracks.map((track) => ({
       ...track,
       items: track.items.map((item) => {
+        if (item.type === "animation" && item.graphic?.src) {
+          const refreshed = mediaUrls[extractS3KeyOrPassthrough(item.graphic.src)] ?? graphicsSrcs.get(item.graphic.src);
+          if (refreshed) return { ...item, graphic: { ...item.graphic, src: refreshed } };
+        }
         if (!("assetId" in item) || !item.assetId) return item;
         const asset = byId.get(item.assetId);
         if (!asset) return item;
         const nextThumb =
           asset.mediaType === "image"
             ? asset.thumbnailUrl || asset.url
-            : "thumbnailUrl" in item
-              ? item.thumbnailUrl
-              : undefined;
+            : asset.mediaType === "video"
+              ? asset.thumbnailUrl ||
+                asset.metadata?.posterUrl ||
+                asset.metadata?.spriteUrl ||
+                ("thumbnailUrl" in item ? item.thumbnailUrl : undefined)
+              : "thumbnailUrl" in item
+                ? item.thumbnailUrl
+                : undefined;
         if (!nextThumb || !("thumbnailUrl" in item)) return item;
         if (item.thumbnailUrl === nextThumb) return item;
         return { ...item, thumbnailUrl: nextThumb };
@@ -131,17 +199,22 @@ function snapshotsWithBudget(
   ]);
 }
 
-export async function loadEditorState(projectId: string): Promise<EditorState> {
+export async function loadEditorState(
+  projectId: string,
+  opts?: { signal?: AbortSignal },
+): Promise<EditorState> {
   if (shouldUseMockEditor()) {
     mockFallbackRequested = false;
     return createEditorState(projectId);
   }
 
+  const signal = opts?.signal;
+
   // Timeline is the critical path. Project + snapshots run in parallel but must
   // not delay hydration when a saved editorDocument is already available.
-  const projectPromise = getProject(projectId);
-  const timelinePromise = fetchProjectTimeline(projectId);
-  const snapshotsPromise = listTimelineSnapshots(projectId).catch(
+  const projectPromise = getProject(projectId, signal);
+  const timelinePromise = fetchProjectTimeline(projectId, signal);
+  const snapshotsPromise = listTimelineSnapshots(projectId, signal).catch(
     () => [] as TimelineSnapshotMeta[],
   );
 
@@ -195,7 +268,7 @@ export async function loadEditorState(projectId: string): Promise<EditorState> {
       project: { ...timeline.editorDocument.project, id: projectId },
       timeline: uniquifyTimelineItemIds(
         withRefreshedCaptionWordClocks(
-          refreshClipThumbnails(timeline.editorDocument.timeline, assets),
+          refreshClipThumbnails(timeline.editorDocument.timeline, assets, timeline.editorDocument.assets, timeline.mediaUrls),
         ),
       ),
       assets,

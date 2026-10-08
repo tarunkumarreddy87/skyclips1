@@ -35,7 +35,7 @@ HANUMAN targets production-grade architecture but must ship a demonstrable MVP w
 | Billing and payments | **In progress** — Dodo Payments checkout/webhooks per [ADR 0011](./0011-platform-stack-better-auth-mongo-dodo.md); credit enforcement still deferred |
 | Credit enforcement | Post-MVP |
 | Mobile app | Post-MVP |
-| Advanced motion graphics | Post-MVP — **partially overridden by [ADR 0007](./0007-element-transform-animation.md)** (schema) and **[ADR 0009](./0009-remotion-render-path.md)** (Remotion export path; FFmpeg may remain as fallback/audio) |
+| Advanced motion graphics | Post-MVP — **partially overridden by [ADR 0007](./0007-element-transform-animation.md)** (schema) and **[ADR 0012](./0012-native-video-engine.md)** (owned SVG/FFmpeg export path) |
 | Full timeline editor / NLE | Post-MVP — **source in-point trim only overridden by [ADR 0008](./0008-source-trim-defer-nle.md)** (no ripple/multi-select) |
 | Chat-based editing | Post-MVP — **superseded in part by [ADR 0004](./0004-editor-agent-v1.md)** (Editor Agent v1: timeline ops only, no TTS) |
 | Custom voiceover upload | Post-MVP (schema reserved) |

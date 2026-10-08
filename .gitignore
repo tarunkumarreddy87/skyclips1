@@ -21,6 +21,7 @@ build/
 
 # Next.js
 apps/web/.next/
+apps/web/.next-dev/
 apps/web/out/
 
 # IDE
@@ -47,10 +48,14 @@ workers/media/proofs/*.manifest.json
 # Turbo
 .turbo/
 .gstack/
+.cache/
 .vercel
 .env*
-
+!.env.example
+!**/.env.example
 # Local agent / IDE scratch
+# Account-owned template code and uploaded media; never source-controlled.
+/data/template-library/
 .cursor/
 .codex-runlogs/
 tmp/
@@ -60,3 +65,6 @@ tmp-*
 # Local media / proof dumps outside proofs policy
 workers/media/proofs/*.png
 workers/media/proofs/*.jpg
+
+
+

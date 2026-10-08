@@ -1,6 +1,6 @@
 import type { ThemeVisualGrade } from "@hanuman/shared-types";
 
-/** Map theme `eq` grade to a CSS filter for live preview (Remotion applies the real grade). */
+/** Map theme `eq` grade to a CSS filter for live preview (native engine applies the real grade). */
 export function themeGradeCssFilter(grade: ThemeVisualGrade | null | undefined): string | undefined {
   if (!grade || grade.intensity <= 0) return undefined;
   const intensity = Math.max(0, Math.min(1, grade.intensity));

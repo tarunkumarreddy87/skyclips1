@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight, Loader2, Sparkles, Video } from "lucide-react";
+import { ArrowUpRight, Loader2, Video } from "lucide-react";
 import type { Project } from "@hanuman/shared-types";
 import { listProjects } from "@/lib/api-client";
 import { mockProjects } from "@/lib/mock-data";
@@ -12,16 +12,12 @@ import { formatRelativeTime } from "@/lib/utils";
 
 type ListItem = Project & { prompt?: string };
 
-/** Rough credit estimate for UI only (billing not enforced). */
-function creditHint(status: string): number {
-  if (status === "completed") return 42;
-  if (status === "running" || status === "queued") return 28;
-  return 12;
-}
+
 
 export function RecentGenerations() {
   const [projects, setProjects] = useState<ListItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const useMock = useMockProjectsList();
 
   useEffect(() => {
@@ -62,6 +58,8 @@ export function RecentGenerations() {
               .slice(0, 6),
           );
         }
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Unable to load recent videos.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -73,24 +71,25 @@ export function RecentGenerations() {
 
   if (loading) {
     return (
-      <section className="mt-10 flex items-center gap-2 text-sm text-zinc-500">
+      <section className="mt-10 flex items-center gap-2 text-sm text-muted-foreground">
         <Loader2 className="size-4 animate-spin" />
         Loading recent generations…
       </section>
     );
   }
 
+  if (error) return <section role="status" className="mt-10 rounded-xl border border-border p-4 text-sm text-muted-foreground">Recent videos could not load. <Link href="/projects" className="underline underline-offset-2">Open Projects to retry</Link></section>;
   if (projects.length === 0) return null;
 
   return (
     <section className="mt-12 w-full">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 className="text-[15px] font-medium tracking-tight text-zinc-100">
+        <h2 className="text-[15px] font-medium tracking-tight text-foreground">
           Recent Generations
         </h2>
         <Link
           href="/projects"
-          className="inline-flex items-center gap-1 text-[13px] text-zinc-500 transition-colors hover:text-zinc-200"
+          className="inline-flex items-center gap-1 text-[13px] text-muted-foreground transition-colors hover:text-foreground"
         >
           View all
           <ArrowUpRight className="size-3.5" />
@@ -101,13 +100,12 @@ export function RecentGenerations() {
         {projects.map((project) => {
           const thumbnail = projectThumbnailUrl(project.id, project.formatMode);
           const href = projectHref(project.status, project.id);
-          const credits = creditHint(project.status);
 
           return (
             <li key={project.id}>
               <Link
                 href={href}
-                className="group flex items-center gap-3 rounded-2xl px-2 py-2.5 transition-colors hover:bg-white/[0.04]"
+                className="group flex items-center gap-3 rounded-2xl px-2 py-2.5 transition-colors hover:bg-accent/60"
               >
                 <span className="relative size-12 shrink-0 overflow-hidden rounded-xl bg-zinc-800 ring-1 ring-white/8">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -122,20 +120,17 @@ export function RecentGenerations() {
                 </span>
 
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[14px] font-medium text-zinc-100">
+                  <span className="block truncate text-[14px] font-medium text-foreground">
                     {project.title || "Untitled"}
                   </span>
-                  <span className="mt-0.5 block text-[12px] text-zinc-500">
+                  <span className="mt-0.5 block text-[12px] text-muted-foreground">
                     {formatRelativeTime(project.updatedAt || project.createdAt)}
                   </span>
                 </span>
 
-                <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-[11px] font-medium text-zinc-400">
-                  <Sparkles className="size-3 text-amber-400/80" />
-                  {credits} Credits
-                </span>
 
-                <ArrowUpRight className="size-4 shrink-0 text-zinc-600 transition-colors group-hover:text-zinc-300" />
+
+                <ArrowUpRight className="size-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
               </Link>
             </li>
           );

@@ -14,7 +14,7 @@ def test_resolve_speaker_passes_through_valid_names() -> None:
 def test_resolve_speaker_maps_legacy_aliases() -> None:
     assert resolve_speaker("sarvam-hi") == "kavya"
     assert resolve_speaker("sarvam-en-in") == "aditya"
-    assert resolve_speaker("sarvam-en-us") == "abhilash"
+    assert resolve_speaker("sarvam-en-us") == "aditya"
     assert resolve_speaker("eleven-clive") == "shubh"
     assert resolve_speaker("hanuman-neutral") == "shubh"
 

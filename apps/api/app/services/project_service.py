@@ -15,6 +15,7 @@ from app.schemas.project import (
     ProjectResponse,
     UpdateBriefRequest,
 )
+from app.services.media_keys import is_project_object_key
 from app.services.quote_service import QuoteService
 
 
@@ -76,6 +77,11 @@ class ProjectService:
 
         brief = project.brief
         if payload.script_s3_key is not None:
+            if not is_project_object_key(payload.script_s3_key, project.id):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="scriptS3Key must belong to this project",
+                )
             brief.script_s3_key = payload.script_s3_key
             project.entry_path = EntryPath.SCRIPT_FIRST
         if payload.target_duration_sec is not None:
@@ -131,7 +137,9 @@ class ProjectService:
 
         active_quote = next((q for q in project.quotes if q.is_active), None)
         quote_response = (
-            self._quote_service._to_response(active_quote) if active_quote is not None else None
+            self._quote_service._to_response(active_quote, project)
+            if active_quote is not None
+            else None
         )
 
         return ProjectDetailResponse(

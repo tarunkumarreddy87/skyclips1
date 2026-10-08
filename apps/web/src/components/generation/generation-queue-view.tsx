@@ -41,19 +41,26 @@ export function GenerationQueueView({ projectId }: GenerationQueueViewProps) {
     };
   }, [projectId]);
 
+  const projectStatus = project?.status;
   useEffect(() => {
-    if (!project || project.status === "completed" || project.status === "failed") return;
+    if (!projectStatus || projectStatus === "completed" || projectStatus === "failed") return;
+    let cancelled = false;
     const tick = setInterval(() => {
       void getProject(projectId)
-        .then((detail) => setProject(detail))
+        .then((detail) => {
+          if (!cancelled) setProject(detail);
+        })
         .catch(() => undefined);
     }, 4000);
-    return () => clearInterval(tick);
-  }, [project, projectId]);
+    return () => {
+      cancelled = true;
+      clearInterval(tick);
+    };
+  }, [projectStatus, projectId]);
 
   if (loading) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center gap-2 bg-[#1a1a1a] text-zinc-400">
+      <div className="flex min-h-[60vh] items-center justify-center gap-2 bg-background text-muted-foreground">
         <Loader2 className="size-5 animate-spin" />
         Loading generation status…
       </div>
@@ -62,13 +69,12 @@ export function GenerationQueueView({ projectId }: GenerationQueueViewProps) {
 
   if (error || !project) {
     return (
-      <div className="flex min-h-[60vh] items-center justify-center bg-[#1a1a1a] px-4">
-        <div className="flex max-w-md flex-col items-center gap-3 rounded-2xl border border-white/10 bg-[#222] p-10 text-center">
-          <AlertTriangle className="size-8 text-red-400" />
-          <p className="text-sm text-zinc-400">{error ?? "Project not found"}</p>
+      <div className="flex min-h-[60vh] items-center justify-center bg-background px-4">
+        <div className="flex max-w-md flex-col items-center gap-3 rounded-2xl border border-border bg-card p-10 text-center shadow-sm">
+          <AlertTriangle className="size-8 text-destructive" />
+          <p className="text-sm text-muted-foreground">{error ?? "Project not found"}</p>
           <Button
             variant="outline"
-            className="border-white/10 bg-transparent text-white hover:bg-white/5"
             render={<Link href="/projects" />}
           >
             Back to projects
@@ -81,9 +87,9 @@ export function GenerationQueueView({ projectId }: GenerationQueueViewProps) {
   const autoStart = project.status === "approved";
 
   return (
-    <div className="relative min-h-[70vh] bg-[#1a1a1a] text-white">
+    <div className="generation-queue relative min-h-svh bg-background text-foreground">
       <div
-        className="pointer-events-none absolute inset-x-0 top-0 h-56 bg-[radial-gradient(ellipse_at_top,rgba(59,130,246,0.12),transparent_60%)]"
+        className="queue-ambient pointer-events-none absolute inset-x-0 top-0 h-72"
         aria-hidden
       />
 
@@ -91,22 +97,22 @@ export function GenerationQueueView({ projectId }: GenerationQueueViewProps) {
         <div className="flex items-center gap-3">
           <Link
             href="/projects"
-            className="inline-flex size-8 items-center justify-center rounded-lg border border-white/10 text-zinc-400 transition-colors hover:bg-white/[0.05] hover:text-white"
+            className="inline-flex size-9 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-foreground"
             aria-label="Back to projects"
           >
             <ArrowLeft className="size-4" />
           </Link>
-          <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-zinc-500">
+          <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
             Generation queue
           </p>
         </div>
 
         <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex flex-col gap-2">
-            <h1 className="font-display text-3xl font-semibold tracking-tight text-balance text-white sm:text-4xl">
+            <h1 className="font-display text-3xl font-semibold tracking-tight text-balance text-foreground sm:text-4xl">
               {project.title}
             </h1>
-            <p className="max-w-xl text-sm leading-relaxed text-zinc-400">
+            <p className="max-w-xl text-sm leading-relaxed text-muted-foreground">
               Live pipeline for your {project.formatMode} ·{" "}
               {project.entryPath === "script_first" ? "script-first" : "prompt-first"} production.
               {project.status === "completed"

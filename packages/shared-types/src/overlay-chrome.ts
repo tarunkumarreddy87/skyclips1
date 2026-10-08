@@ -1,7 +1,6 @@
 /**
  * Shared chrome styles for chapter title / subscribe CTA.
- * Used by editor CSS preview and Remotion overlays so visual look stays aligned
- * (ADR 0009 — Remotion still owns frame-accurate animation timing).
+ * Used by editor selection chrome and the deterministic graphics runtime.
  */
 
 export type OverlayChromeTheme = {

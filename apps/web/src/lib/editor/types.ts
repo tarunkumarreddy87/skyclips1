@@ -1,3 +1,5 @@
+import type { CaptionStyleId, GraphicObject } from "@hanuman/shared-types";
+
 export type EditorProjectStatus = "editing" | "rendering" | "completed" | "failed";
 export type TrackType =
   | "video"
@@ -76,7 +78,7 @@ export interface ElementAnimation {
   loop?: { preset: LoopPreset; params?: ParallaxPanParams };
 }
 
-export type LeftTool = "media" | "text" | "audio" | "animations" | "transitions" | "templates" | "files" | "history";
+export type LeftTool = "media" | "text" | "audio" | "animations" | "transitions" | "templates" | "files" | "history" | "effects";
 export type SaveStatus = "saved" | "saving" | "unsaved" | "error";
 
 export interface EditorProject {
@@ -99,11 +101,8 @@ export interface TimelineSettings {
   snappingEnabled: boolean;
   showTransitions: boolean;
   captionsEnabled: boolean;
-  /**
-   * Project-level caption burn-in style (preview + Remotion).
-   * bold_static | karaoke | boxed_pill
-   */
-  captionStyle: "bold_static" | "karaoke" | "boxed_pill";
+  /** Project-level caption style shared by preview and cloud export. */
+  captionStyle: CaptionStyleId;
   backgroundColor: string;
   backgroundImage: string | null;
   overlayDropShadow: boolean;
@@ -113,6 +112,8 @@ export interface TimelineSettings {
   clipAudioVolume: number;
   /** Preview master mute — silences all mix buses in the editor only. */
   previewMuted?: boolean;
+  /** Monitor gain only; not serialized into the render manifest. */
+  previewVolume?: number;
   /** Active visual theme (maps from brand_profile_id / settings.theme_id). */
   themeId?: "crime" | "history" | "modern" | "minimalist" | "standard";
   /**
@@ -133,6 +134,9 @@ export interface TimelineItemBase {
 }
 
 export interface ClipItem extends TimelineItemBase {
+  threeScene?: import("@hanuman/shared-types").ThreeScene;
+  motionTemplate?: import("@hanuman/shared-types").EditorialARollTemplate;
+  visualEffects?: import("@hanuman/shared-types").ClipVisualEffects;
   type: "video" | "broll";
   mediaType: MediaType;
   assetId: string;
@@ -179,17 +183,34 @@ export interface TextItem extends TimelineItemBase {
   words?: Array<{ text: string; startSec: number; durationSec: number }>;
 }
 
+export interface MotionSlot {
+  text?: string;
+  value?: number;
+  color?: string;
+  label?: string;
+}
+
 export interface AnimationItem extends TimelineItemBase {
+  textStyle?: { fontSize: number; color: string; fontFamily: string; fontWeight: string; alignment: "left" | "center" | "right" };
+  scene?: import("@hanuman/shared-types").MotionScene;
   type: "animation";
   preset: string;
   intensity: number;
   position: { x: number; y: number };
   transform?: ElementTransform;
   animation?: ElementAnimation;
+  /** Structured object payload; timing/transform are owned by the timeline item. */
+  graphic?: GraphicObject;
   /**
    * Chapter / lower-third box width as % of frame (same Creativly model as freeform text).
    */
   boxWidthPct?: number;
+  /** Motion-graphic template fields (Phase 1). */
+  title?: string;
+  subtitle?: string;
+  slots?: MotionSlot[];
+  imageRefs?: string[];
+  themeId?: string;
 }
 
 export type TimelineItem = ClipItem | AudioItem | TextItem | AnimationItem;

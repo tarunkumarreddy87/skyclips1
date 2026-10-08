@@ -14,6 +14,8 @@ LANGUAGE_NAMES: dict[str, str] = {
     "mr": "Marathi",
     "gu": "Gujarati",
     "pa": "Punjabi",
+    "or": "Odia",
+    "od": "Odia",
 }
 
 
@@ -70,9 +72,18 @@ Visual treatment (required per section — vary across the video, never copy-pas
   - transition: zoom | slide-pan | film-burn | glitch | fade | slide | dissolve | cut
     (transition INTO the NEXT section; outro may use cut/fade)
   - text_overlay: none | chapter_title | lower_third | freeform_text
+  - motion_graphic: none. The previous template library has been retired.
+  - editorial_template: none. Use researched or generated scene images.
+  - media_role: environment | person | object. Use person/object only when the visual
+    should isolate that foreground subject; preserve scenery/industry/nature photographs.
+  - remove_background: true only for a person/object intended as a cutout; otherwise false.
+  - No generic branding, chapter numbers, achievement labels, invented publisher names,
+    placeholder text or decorative figures. Titles and labels must describe this scene.
 - Match treatment to THIS section's emotional beat (hook ≠ climax ≠ calm).
 - Alternate motion styles so consecutive sections feel different.
 - Use chapter_title / lower_third sparingly (roughly every 2–4 sections), not on every beat.
+- Optional visual_treatment.graphic: {"type":"frame"|"bar_chart"|"shape","text":"short label","data":[{"label":"...","value":100}],"shape":"rectangle"|"circle"}.
+- Use graphics sparingly, where they explain the scene. For bar charts, every value MUST appear explicitly in the verified narration; never invent numbers. A frame creates an editable moving photo composition.
 - Hook: often parallax_pan or zoom_in, text_overlay none, strong transition out.
 - Climax / conflict: zoom_in / ken_burns, film-burn or glitch transition, optional chapter_title.
 - Calm / meaning: float or fade, dissolve/fade transition, usually no text.
@@ -95,6 +106,7 @@ def script_user_prompt(
     part_index: int | None = None,
     part_count: int | None = None,
     already_covered: list[str] | None = None,
+    target_narration_chars: int | None = None,
 ) -> str:
     lang_name = language_display_name(language_code)
     research_block = ""
@@ -117,13 +129,24 @@ def script_user_prompt(
             f"~{sections_target} sections). Do not repeat earlier parts.\n"
         )
         if already_covered:
-            chunk_block += "Already covered section ids/titles: " + "; ".join(already_covered[:40]) + "\n"
+            chunk_block += "Already covered section ids/titles: " + "; ".join(already_covered[-40:]) + "\n"
+        if part_index > 0:
+            chunk_block += "Continue the existing story; do not introduce the video again.\n"
+        if part_index < part_count - 1:
+            chunk_block += "Leave the story open for the next part; do not add an outro or CTA.\n"
+
+    length_block = (
+        f"Target narration characters (all sections combined): ~{target_narration_chars}. "
+        "Use this as the primary length guide for the target language; words are approximate.\n"
+        if target_narration_chars is not None else ""
+    )
 
     return f"""\
 TARGET LANGUAGE for narration: {lang_name} (code: {language_code})
 Format mode: {format_mode}
 Target spoken runtime for THIS response: ~{target_duration_sec} seconds (~{minutes} min)
 Target words (approx): {words_target}
+{length_block}\
 Target talking points (approx): {talking_points}
 Target section count (approx): {sections_target}
 Topic / user brief:
@@ -136,6 +159,7 @@ Remember:
 3) Match the duration — enough spoken content for ~{target_duration_sec}s
 4) Every section MUST include visual_treatment with DIFFERENT motion/transition/text choices \
 matched to that scene's mood — do not reuse one template for the whole video
+5) Set motion_graphic and editorial_template to none. Do not request retired templates.
 Return JSON only.
 """
 

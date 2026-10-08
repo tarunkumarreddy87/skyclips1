@@ -4,14 +4,20 @@ import { toManifestTransform, resolveTransform } from "./transform";
 import type { ElementAnimation as EditorElementAnimation } from "./types";
 import { estimateExportDurationSec } from "./export-duration";
 import { resolveMediaUrl } from "./media-url";
-import { estimateWordTimings } from "@hanuman/shared-types";
+import { compositionCaptionFontPx, compositionTextFontPx } from "./text-size";
+import {
+  estimateWordTimings,
+  type GraphicObject,
+  getTemplateMeta,
+  isMotionGraphicManifestType,
+} from "@hanuman/shared-types";
 
 export type ManifestSrcMode = "durable" | "browser";
 
 export interface BuildManifestOptions {
   /**
-   * durable — S3 keys for worker/Remotion CLI download (persist + render).
-   * browser — playable http(s)/proxy URLs for @remotion/player preview.
+   * durable — S3 keys for cloud worker download (persist + render).
+   * browser — playable http(s)/proxy URLs for engine preview.
    */
   srcMode?: ManifestSrcMode;
 }
@@ -34,20 +40,79 @@ function toManifestAnimation(anim: EditorElementAnimation | undefined): ElementA
 }
 function resolveDurableSrc(asset: Asset | undefined): string {
   const raw = asset?.metadata?.sourceKey || asset?.url || "";
+  if (raw.startsWith("/sfx/")) return "static:" + raw.slice(1);
   return extractS3KeyOrPassthrough(raw);
 }
 
-function resolveBrowserSrc(asset: Asset | undefined): string {
-  if (!asset?.url) return "";
-  return resolveMediaUrl(asset.url);
+/** Warn once per asset when browser preview cannot use a proxy. */
+const browserSrcFallbackWarned = new Set<string>();
+
+export type BrowserSrcResolution = {
+  src: string;
+  /** When true, treat as Img still (poster / stub) — never Html5Video of original. */
+  forceImage?: boolean;
+};
+
+/**
+ * Browser preview media URL.
+ * Videos prefer proxies, but remain playable from their source while deriving.
+ * Posters are only a fallback when no playable source URL is available.
+ * Audio / images may use the asset URL.
+ */
+export function resolveBrowserSrc(asset: Asset | undefined): BrowserSrcResolution {
+  if (!asset) return { src: "" };
+
+  // Prefer a derived proxy for native browser video preview.
+  const proxyUrl = asset.metadata?.proxyUrl;
+  if (proxyUrl) {
+    const resolved = resolveMediaUrl(proxyUrl);
+    if (resolved) return { src: resolved };
+  }
+
+  // A missing proxy must not silently turn an available video into a slideshow.
+  if (asset.mediaType === "video") {
+    const original = asset.url ? resolveMediaUrl(asset.url) : "";
+    if (original && /^(https?:|blob:|\/)/i.test(original)) {
+      return { src: original };
+    }
+    const posterRaw =
+      asset.metadata?.posterUrl ||
+      asset.thumbnailUrl ||
+      "";
+    const poster = posterRaw ? resolveMediaUrl(posterRaw) : "";
+    if (poster) {
+      if (!browserSrcFallbackWarned.has(asset.id)) {
+        browserSrcFallbackWarned.add(asset.id);
+        console.warn(
+          "[manifest] browser preview using poster still (no proxy yet)",
+          asset.id,
+          asset.metadata?.sourceKey ?? "",
+        );
+      }
+      return { src: poster, forceImage: true };
+    }
+    if (!browserSrcFallbackWarned.has(asset.id)) {
+      browserSrcFallbackWarned.add(asset.id);
+      console.warn(
+        "[manifest] browser preview blocked original MP4 — no proxy/poster",
+        asset.id,
+        asset.metadata?.sourceKey ?? "",
+      );
+    }
+    return { src: "color:#111111", forceImage: true };
+  }
+
+  if (!asset.url) return { src: "" };
+  return { src: resolveMediaUrl(asset.url) };
 }
 
-function resolveClipSrc(asset: Asset | undefined, mode: ManifestSrcMode): string {
-  return mode === "browser" ? resolveBrowserSrc(asset) : resolveDurableSrc(asset);
+function resolveClipSrc(asset: Asset | undefined, mode: ManifestSrcMode): BrowserSrcResolution {
+  if (mode === "browser") return resolveBrowserSrc(asset);
+  return { src: resolveDurableSrc(asset) };
 }
 
 /** Prefer S3 object key over expired/presigned HTTP URLs for persistence + render download. */
-function extractS3KeyOrPassthrough(src: string): string {
+export function extractS3KeyOrPassthrough(src: string): string {
   if (!src) return src;
   if (!src.startsWith("http://") && !src.startsWith("https://")) return src;
   try {
@@ -92,21 +157,7 @@ function clampVolumeTo0to1(v: number) {
   return Math.max(0, Math.min(1, v));
 }
 
-/** Editor caption sizes ~16–28px; map to 1080p Remotion composition px. */
-export function compositionCaptionFontPx(editorFontSize?: number): number {
-  const ui = Number.isFinite(editorFontSize) ? Number(editorFontSize) : 22;
-  // Values already in composition range (e.g. reloaded from older manifests).
-  if (ui >= 36) return Math.max(48, Math.min(110, Math.round(ui)));
-  return Math.max(72, Math.min(110, Math.round(ui * 4)));
-}
-
-/** Freeform title/card text — editor UI px → 1080p Remotion px. */
-export function compositionTextFontPx(editorFontSize?: number): number {
-  const ui = Number.isFinite(editorFontSize) ? Number(editorFontSize) : 28;
-  if (ui >= 40) return Math.max(40, Math.min(180, Math.round(ui)));
-  // Slightly larger on-canvas titles so STREAMER/EDITORIAL presets read clearly at 1080p.
-  return Math.max(56, Math.min(168, Math.round(ui * 3.4)));
-}
+export { compositionCaptionFontPx, compositionTextFontPx } from "./text-size";
 
 export function buildTimelineManifestV1FromEditorState(
   projectId: string,
@@ -163,7 +214,7 @@ export function buildTimelineManifestV1FromEditorState(
         captionItems.push(item as TextItem);
       }
     }
-    // Freeform text is a separate Remotion overlay — never compete with captions.
+    // Freeform text is a separate native engine overlay — never compete with captions.
     if (track.type === "text") {
       for (const item of track.items) {
         if (item.hidden) continue;
@@ -179,7 +230,7 @@ export function buildTimelineManifestV1FromEditorState(
   const visibleSfxItems = sfxItems.sort((a, b) => a.startMs - b.startMs);
   const visibleCaptionItems = captionItems.sort((a, b) => a.startMs - b.startMs);
 
-  // Export SSOT metadata: transition-overlap-aware (Remotion TransitionSeries).
+  // Export SSOT metadata: transition-overlap-aware (native engine TransitionSeries).
   // Browser preview uses the full canvas duration so playhead ↔ picture stay 1:1.
   const durationSecExport = estimateExportDurationSec(timeline);
   const durationSecCanvas = Math.max(0.001, timeline.durationMs / 1000);
@@ -188,8 +239,11 @@ export function buildTimelineManifestV1FromEditorState(
   const videoClips: TimelineVideoClip[] = visibleVideoItems
     .map((item, idx) => {
       const asset = assets.find((a) => a.id === item.assetId);
-      const src = resolveClipSrc(asset, srcMode);
-      const clipType = (item.mediaType === "video" ? "video" : "image") as "video" | "image";
+      const resolved = resolveClipSrc(asset, srcMode);
+      const src = resolved.src;
+      const clipType = (
+        resolved.forceImage || item.mediaType !== "video" ? "image" : "video"
+      ) as "video" | "image";
 
       return {
         id: item.id || `video-${idx}`,
@@ -203,6 +257,9 @@ export function buildTimelineManifestV1FromEditorState(
         muted: Boolean(item.muted),
         transform: toManifestTransform(item.transform),
         animation: toManifestAnimation(item.animation),
+        three_scene: item.threeScene,
+        visual_effects: item.visualEffects,
+        motion_template: item.motionTemplate,
       };
     })
     .filter((c) => Boolean(c.src?.trim()));
@@ -210,11 +267,14 @@ export function buildTimelineManifestV1FromEditorState(
   const brollClips: TimelineBrollClip[] = visibleBrollItems
     .map((item, idx) => {
       const asset = assets.find((a) => a.id === item.assetId);
-      const src = resolveClipSrc(asset, srcMode);
+      const resolved = resolveClipSrc(asset, srcMode);
+      const src = resolved.src;
       return {
         id: item.id || `broll-${idx}`,
         scene_id: String(asset?.metadata?.sceneId || item.id || `broll-${idx}`),
-        type: (item.mediaType === "video" ? "video" : "image") as "video" | "image",
+        type: (
+          resolved.forceImage || item.mediaType !== "video" ? "image" : "video"
+        ) as "video" | "image",
         src,
         start_sec: sec(item.startMs),
         duration_sec: Math.max(0.001, sec(item.endMs - item.startMs)),
@@ -224,6 +284,8 @@ export function buildTimelineManifestV1FromEditorState(
         label: item.label,
         transform: toManifestTransform(item.transform),
         animation: toManifestAnimation(item.animation),
+        three_scene: item.threeScene,
+        visual_effects: item.visualEffects,
       };
     })
     .filter((c) => Boolean(c.src?.trim()));
@@ -231,7 +293,7 @@ export function buildTimelineManifestV1FromEditorState(
   const audioClips: TimelineAudioClip[] = visibleNarrationItems
     .map((item, idx) => {
       const asset = assets.find((a) => a.id === item.assetId);
-      const src = resolveClipSrc(asset, srcMode);
+      const src = resolveClipSrc(asset, srcMode).src;
       const volume01 = clampVolumeTo0to1(item.volume / 100);
 
       return {
@@ -251,7 +313,7 @@ export function buildTimelineManifestV1FromEditorState(
   const musicClips: TimelineMusicClip[] = [
     ...visibleMusicItems.map((item, idx) => {
       const asset = assets.find((a) => a.id === item.assetId);
-      const src = resolveClipSrc(asset, srcMode);
+      const src = resolveClipSrc(asset, srcMode).src;
       return {
         id: item.id || `music-${idx}`,
         type: "music" as const,
@@ -268,7 +330,7 @@ export function buildTimelineManifestV1FromEditorState(
     // SFX lane → music track with mood="sfx" so the worker mixes on the sfx_volume bus.
     ...visibleSfxItems.map((item, idx) => {
       const asset = assets.find((a) => a.id === item.assetId);
-      const src = resolveClipSrc(asset, srcMode);
+      const src = resolveClipSrc(asset, srcMode).src;
       return {
         id: item.id || `sfx-${idx}`,
         type: "music" as const,
@@ -308,7 +370,7 @@ export function buildTimelineManifestV1FromEditorState(
         text: item.text ?? "",
         start_sec: startSec,
         duration_sec: durationSec,
-        // Always emit transform so Remotion matches editor WYSIWYG (don't strip
+        // Always emit transform so native engine matches editor WYSIWYG (don't strip
         // near-identity — that incorrectly snapped freeform text to caption default).
         transform: (() => {
           const t = resolveTransform(item.transform, item.position);
@@ -326,11 +388,13 @@ export function buildTimelineManifestV1FromEditorState(
         })(),
         animation: toManifestAnimation(item.animation),
         style: {
-          // Editor fontSize is preview-UI px (~16–28). Remotion composition is 1080p —
+          // Editor fontSize is preview-UI px (~16–28). native engine composition is 1080p —
           // map ~3× so captions stay readable in Player + final MP4.
           font_size_px: compositionCaptionFontPx(item.fontSize),
           color: item.color || "#FFFFFF",
           font_weight: item.fontWeight || "700",
+          font_family: item.fontFamily || undefined,
+          alignment: item.alignment || "center",
           box_width_pct: Math.max(18, Math.min(88, item.boxWidthPct ?? 72)),
         },
         words,
@@ -339,13 +403,20 @@ export function buildTimelineManifestV1FromEditorState(
 
   const runId = timeline.id;
 
-  const videoIdSet = new Set(videoClips.map((c) => c.id));
+  const sortedVideoClips = [...videoClips].sort((a, b) => a.start_sec - b.start_sec);
+  const transitionLimits = new Map<string, number>();
+  sortedVideoClips.forEach((clip, index) => {
+    const next = sortedVideoClips[index + 1];
+    if (next && Math.abs(clip.start_sec + clip.duration_sec - next.start_sec) <= 1 / timeline.fps) {
+      transitionLimits.set(clip.id, Math.min(clip.duration_sec, next.duration_sec));
+    }
+  });
   // Global "Show Transitions" off → hard cuts only in export (markers stay in editor state).
   const transitions: TimelineTransition[] = timeline.settings.showTransitions
     ? timeline.transitions
         .filter((t) => {
           if (t.enabled === false) return false;
-          if (!videoIdSet.has(t.afterItemId)) return false;
+          if (!transitionLimits.has(t.afterItemId)) return false;
           if (t.transitionType === "cut" || t.durationMs <= 0) return false;
           return true;
         })
@@ -353,18 +424,34 @@ export function buildTimelineManifestV1FromEditorState(
           id: t.id,
           after_clip_id: t.afterItemId,
           type: normalizeTransitionTypeForManifest(t.transitionType),
-          duration_sec: Math.max(0.05, sec(t.durationMs)),
+          duration_sec: Math.min(transitionLimits.get(t.afterItemId)!, Math.max(0.001, sec(t.durationMs))),
           enabled: true,
           sfx_muted: Boolean(t.sfxMuted),
         }))
     : [];
 
   const overlays: TimelineOverlay[] = [];
+  const graphics: GraphicObject[] = [];
   for (const track of timeline.tracks) {
     if (track.type !== "animation" || track.hidden) continue;
     for (const item of track.items) {
       if (item.hidden || item.type !== "animation") continue;
-      if (item.preset === "subscribe-cta") {
+      if (item.graphic) {
+        const asset = assets.find((a) => a.url === item.graphic?.src || a.metadata?.sourceKey === item.graphic?.src);
+        graphics.push({
+          ...item.graphic, id: item.id, start_sec: sec(item.startMs),
+          duration_sec: Math.max(0.001, sec(item.endMs - item.startMs)),
+          src: asset ? resolveClipSrc(asset, srcMode).src : item.graphic.src ? (srcMode === "durable" ? extractS3KeyOrPassthrough(item.graphic.src) : resolveMediaUrl(item.graphic.src)) : undefined,
+          transform: toManifestTransform(item.transform) ?? item.graphic.transform,
+          animation: toManifestAnimation(item.animation) ?? item.graphic.animation,
+        });
+        continue;
+      }
+      if (item.preset === "generated-scene" && item.scene) {
+        overlays.push({ id: item.id, type: "generated_scene", title: item.title || item.scene.title, scene: item.scene,
+          start_sec: sec(item.startMs), duration_sec: Math.max(0.001, sec(item.endMs - item.startMs)),
+          transform: toManifestTransform(item.transform) });
+      } else if (item.preset === "subscribe-cta") {
         overlays.push({
           id: item.id,
           type: "subscribe_cta",
@@ -379,7 +466,7 @@ export function buildTimelineManifestV1FromEditorState(
         overlays.push({
           id: item.id,
           type: "chapter_title",
-          text: item.label || (isLower ? "Title" : "Chapter"),
+          text: item.title ?? item.label ?? (isLower ? "Title" : "Chapter"),
           start_sec: sec(item.startMs),
           duration_sec: Math.max(0.001, sec(item.endMs - item.startMs)),
           transform: toManifestTransform(
@@ -395,8 +482,48 @@ export function buildTimelineManifestV1FromEditorState(
           animation: toManifestAnimation(item.animation),
           style: {
             box_width_pct: Math.max(18, Math.min(88, item.boxWidthPct ?? 70)),
+            font_size_px: item.textStyle?.fontSize,
+            color: item.textStyle?.color,
+            font_family: item.textStyle?.fontFamily,
+            font_weight: item.textStyle?.fontWeight,
+            alignment: item.textStyle?.alignment,
           },
         });
+      } else {
+        const meta = getTemplateMeta(item.preset);
+        if (meta && isMotionGraphicManifestType(meta.manifestType)) {
+          overlays.push({
+            id: item.id,
+            type: meta.manifestType,
+            text: item.label || meta.label,
+            title: item.title || item.label || meta.label,
+            subtitle: item.subtitle,
+            slots: item.slots,
+            image_refs: item.imageRefs ?? [],
+            theme_id: item.themeId,
+            start_sec: sec(item.startMs),
+            duration_sec: Math.max(0.001, sec(item.endMs - item.startMs)),
+            transform: toManifestTransform(
+              item.transform ?? {
+                x: item.position.x,
+                y: item.position.y,
+                scaleX: 1,
+                scaleY: 1,
+                rotation: 0,
+                zIndex: 25,
+              },
+            ),
+            animation: toManifestAnimation(item.animation),
+            style: {
+              box_width_pct: Math.max(28, Math.min(92, item.boxWidthPct ?? 72)),
+              font_size_px: item.textStyle?.fontSize,
+              color: item.textStyle?.color,
+              font_family: item.textStyle?.fontFamily,
+              font_weight: item.textStyle?.fontWeight,
+              alignment: item.textStyle?.alignment,
+            },
+          });
+        }
       }
     }
   }
@@ -414,7 +541,7 @@ export function buildTimelineManifestV1FromEditorState(
       transform: {
         x: Number(t.x.toFixed(3)),
         y: Number(t.y.toFixed(3)),
-        // Keep uniform scale for rotate/size feel; Remotion maps avg scale → font.
+        // Keep uniform scale for rotate/size feel; native engine maps avg scale → font.
         scaleX: Number(t.scaleX.toFixed(4)),
         scaleY: Number(t.scaleY.toFixed(4)),
         rotation: Number(t.rotation.toFixed(2)),
@@ -456,15 +583,18 @@ export function buildTimelineManifestV1FromEditorState(
     },
     transitions,
     overlays,
+    graphics,
     settings: {
       captions_enabled: timeline.settings.captionsEnabled,
-      caption_style: timeline.settings.captionStyle ?? "bold_static",
+      caption_style: timeline.settings.captionStyle ?? "cinematic",
       music_volume: musicVolume01,
       narration_volume: narrationVolume01,
       sfx_volume: sfxVolume01,
       theme_id: timeline.settings.themeId ?? "standard",
-      // Browser preview only — export workers ignore / leave at 0.
-      ...(srcMode === "browser" ? { clip_audio_volume: clipAudioVolume01 } : {}),
+      clip_audio_volume: clipAudioVolume01,
+      background_color: timeline.settings.backgroundColor,
+      ...(timeline.settings.backgroundImage ? { background_image: srcMode === "durable" ? extractS3KeyOrPassthrough(timeline.settings.backgroundImage) : resolveMediaUrl(timeline.settings.backgroundImage) } : {}),
+      overlay_drop_shadow: timeline.settings.overlayDropShadow,
     },
   };
 }

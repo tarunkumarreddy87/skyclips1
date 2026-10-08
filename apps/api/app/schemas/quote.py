@@ -1,3 +1,5 @@
+import uuid
+
 from pydantic import Field
 
 from app.schemas.common import ApiModel
@@ -27,6 +29,10 @@ class QuoteResponse(ApiModel):
     approved_at: str | None = Field(default=None, serialization_alias="approvedAt")
     created_at: str = Field(serialization_alias="createdAt")
     warnings: list[str] = Field(default_factory=list)
+
+
+class ApproveQuoteRequest(ApiModel):
+    quote_id: uuid.UUID = Field(alias="quoteId")
 
 
 class UpdateQuoteRequest(ApiModel):

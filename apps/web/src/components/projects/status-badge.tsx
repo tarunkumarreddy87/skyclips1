@@ -35,6 +35,7 @@ export function StatusBadge({
   return (
     <Badge
       variant="outline"
+      data-status={key}
       className={cn(
         "rounded-full font-medium capitalize",
         compact ? "border px-2 py-0.5 text-[10px]" : "text-xs",

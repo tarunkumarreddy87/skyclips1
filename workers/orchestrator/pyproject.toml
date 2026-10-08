@@ -7,12 +7,16 @@ dependencies = [
     "temporalio>=1.8.0",
     "pydantic-settings>=2.6.0",
     "httpx>=0.28.0",
+    "serpapi>=0.1.5,<1",
     "boto3>=1.35.0",
     "hanuman-shared-types",
+    "hanuman-timeline-schema",
+    "indic-transliteration>=2.3.82",
 ]
 
 [tool.uv.sources]
 hanuman-shared-types = { path = "../../packages/shared-types/python", editable = true }
+hanuman-timeline-schema = { path = "../../packages/timeline-schema/python", editable = true }
 
 [build-system]
 requires = ["hatchling"]

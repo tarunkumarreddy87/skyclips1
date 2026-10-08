@@ -26,7 +26,8 @@ class RenderJobResponse(BaseModel):
     cost_usd: float | None = Field(alias="costUsd")
     error: str | None = None
     retry_count: int = Field(alias="retryCount")
-    remotion_render_id: str | None = Field(default=None, alias="remotionRenderId")
+    engine: str = "native"
+    encoder: str | None = None
     created_at: str = Field(alias="createdAt")
     updated_at: str = Field(alias="updatedAt")
     started_at: str | None = Field(default=None, alias="startedAt")

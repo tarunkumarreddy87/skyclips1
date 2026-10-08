@@ -1,0 +1,22 @@
+import assert from "node:assert/strict";
+import { useBrandProfileStore } from "./store";
+import { brandComplianceForGenerate } from "./compliance-payload";
+
+const store = useBrandProfileStore;
+const original = store.getState().profiles[0];
+store.getState().updateProfile(original.id, { language: "te", defaultDurationMin: 5 });
+assert.equal(brandComplianceForGenerate(store.getState().getActiveProfile())?.language, "te");
+const profile = store.getState().getActiveProfile()!;
+store.getState().updateProfile(profile.id, { compliance: { ...profile.compliance, sourcing: { commercialStock: false, ccPublicDomain: false, generalWebCrawling: false, aiGeneratedImages: true, imageModel: "test/image" } } });
+const payload = brandComplianceForGenerate(store.getState().getActiveProfile())!;
+assert.equal(payload.captionScript, "latin");
+assert.equal(payload.aiGeneratedImages, true);
+assert.equal(payload.imageModel, "test/image");
+assert.equal(payload.templateMode, "manual");
+assert.deepEqual(payload.allowedTemplates, []);
+assert.equal(store.getState().getActiveProfile()?.defaultDurationMin, 5);
+for (let i = store.getState().profiles.length; i < 10; i++) store.getState().createProfile(`Channel ${i}`);
+const ids = store.getState().profiles.map(p => p.id);
+assert.throws(() => store.getState().createProfile("Overflow"), /up to 10/);
+assert.deepEqual(store.getState().profiles.map(p => p.id), ids, "Exceeding the limit must not delete a saved channel");
+console.log("Channel regressions passed: saved language reaches generation; profile limit preserves data");

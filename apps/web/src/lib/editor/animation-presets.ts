@@ -14,7 +14,7 @@ export interface LoopPresetMeta {
   label: string;
 }
 
-/** Remotion-rendered In/Out presets (ADR 0007) — UI labels match product card art. */
+/** native engine-rendered In/Out presets (ADR 0007) — UI labels match product card art. */
 export const IN_OUT_PRESETS: AnimationPresetMeta[] = [
   { id: "none", label: "None", tabs: ["in", "out", "zoom"] },
   { id: "fade", label: "Fade", tabs: ["in", "out"] },
@@ -27,7 +27,7 @@ export const IN_OUT_PRESETS: AnimationPresetMeta[] = [
   { id: "spin", label: "Spin", tabs: ["in", "out"] },
   { id: "pop", label: "Pop", tabs: ["in", "out"] },
   { id: "wipe", label: "Wipe", tabs: ["in", "out"] },
-  // CSS preview is softer; Remotion exports the full motion (≈ badge in panel).
+  // CSS preview is softer; native engine exports the full motion (≈ badge in panel).
   { id: "float", label: "Float", tabs: ["in", "out"] },
   { id: "drop", label: "Drop", tabs: ["in", "out"] },
   { id: "slide", label: "Slide", tabs: ["in", "out"] },

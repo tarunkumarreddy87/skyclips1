@@ -17,7 +17,7 @@ import { useBrandProfileStore } from "@/lib/brand-profiles";
 import { cn } from "@/lib/utils";
 
 const TRIGGER =
-  "inline-flex h-8 max-w-[220px] items-center justify-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 text-xs font-semibold tracking-wide text-zinc-200 transition-all hover:border-white/16 hover:bg-white/[0.07] hover:text-white";
+  "inline-flex h-8 max-w-[220px] items-center justify-center gap-1.5 rounded-full border border-border bg-muted/50 px-2.5 text-xs font-semibold tracking-wide text-foreground transition-all hover:border-foreground/25 hover:bg-accent";
 
 export function BrandProfileSelector({ className }: { className?: string }) {
   const router = useRouter();
@@ -30,13 +30,13 @@ export function BrandProfileSelector({ className }: { className?: string }) {
   return (
     <>
       <div className={cn("flex items-center gap-1.5", className)}>
-        <DropdownMenu>
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger
             render={
               <button
                 type="button"
                 className={TRIGGER}
-                aria-label="Brand profile"
+                aria-label="Channel profile"
               />
             }
           >
@@ -50,14 +50,14 @@ export function BrandProfileSelector({ className }: { className?: string }) {
                 <span className="max-w-[120px] truncate uppercase">{active.name}</span>
               </>
             ) : (
-              <span className="font-medium text-muted-foreground">Brand profile</span>
+              <span className="font-medium text-muted-foreground">Channel profile</span>
             )}
             <ChevronDown className="size-3 opacity-50" />
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="start"
             sideOffset={8}
-            className="z-[100] w-[268px] rounded-xl border-white/10 bg-[#1c1c1e] p-1.5 text-white shadow-[0_24px_60px_-20px_rgba(0,0,0,0.85)]"
+            className="z-[100] w-[268px] rounded-xl border-border bg-popover p-1.5 text-popover-foreground shadow-xl"
           >
             <DropdownMenuGroup>
               {profiles.map((p) => {
@@ -66,10 +66,10 @@ export function BrandProfileSelector({ className }: { className?: string }) {
                   <DropdownMenuItem
                     key={p.id}
                     className={cn(
-                      "group flex cursor-pointer items-center gap-2.5 rounded-lg py-2.5 pl-2 pr-1 text-white outline-none data-highlighted:bg-white/8",
-                      selected && "bg-white/6",
+                      "group flex cursor-pointer items-center gap-2.5 rounded-lg py-2.5 pl-2 pr-1 text-popover-foreground outline-none data-highlighted:bg-accent",
+                      selected && "bg-accent",
                     )}
-                    onClick={() => setActiveProfileId(p.id)}
+                    onSelect={() => setActiveProfileId(p.id)}
                   >
                     <BrandProfileAvatar
                       name={p.name}
@@ -80,8 +80,10 @@ export function BrandProfileSelector({ className }: { className?: string }) {
                     <span className="min-w-0 flex-1 truncate text-sm font-medium">{p.name}</span>
                     <button
                       type="button"
-                      className="rounded-md p-1.5 text-zinc-500 transition hover:bg-white/10 hover:text-zinc-200"
+                      className="rounded-md p-1.5 text-muted-foreground transition hover:bg-accent hover:text-foreground"
                       aria-label={`Edit ${p.name}`}
+                      onMouseEnter={() => router.prefetch(`/brand-profiles/${p.id}`)}
+                      onFocus={() => router.prefetch(`/brand-profiles/${p.id}`)}
                       onPointerDown={(e) => e.stopPropagation()}
                       onClick={(e) => {
                         e.preventDefault();
@@ -95,18 +97,18 @@ export function BrandProfileSelector({ className }: { className?: string }) {
                 );
               })}
             </DropdownMenuGroup>
-            <DropdownMenuSeparator className="my-1.5 bg-white/10" />
+            <DropdownMenuSeparator className="my-1.5 bg-border" />
             <DropdownMenuItem
-              className="gap-2 rounded-lg py-2.5 text-sm font-medium text-white data-highlighted:bg-white/8"
+              className="gap-2 rounded-lg py-2.5 text-sm font-medium text-popover-foreground data-highlighted:bg-accent"
               onClick={() => setCreateOpen(true)}
             >
-              <Plus className="size-4 text-zinc-300" />
-              New brand profile
+              <Plus className="size-4 text-muted-foreground" />
+              New channel profile
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <CreateBrandProfileDialog open={createOpen} onOpenChange={setCreateOpen} />
+      {createOpen && <CreateBrandProfileDialog open={createOpen} onOpenChange={setCreateOpen} />}
     </>
   );
 }

@@ -8,6 +8,7 @@ HANUMAN is a modular, production-oriented AI video generation platform. Users cr
 
 | Document | Description |
 |----------|-------------|
+| [native-engine-research.md](./architecture/native-engine-research.md) | Primary sources, renderer options, AI editing and performance decisions |
 | [overview.md](./architecture/overview.md) | System boundaries, services, data flow |
 | [data-model.md](./architecture/data-model.md) | Entities, state machine, artifact types |
 | [pipeline-stages.md](./architecture/pipeline-stages.md) | Generation stages, inputs/outputs, timeouts |
@@ -21,6 +22,7 @@ HANUMAN is a modular, production-oriented AI video generation platform. Users cr
 | [0001-monorepo-and-temporal.md](./adr/0001-monorepo-and-temporal.md) | Monorepo layout and Temporal for orchestration |
 | [0002-quote-approval-gate.md](./adr/0002-quote-approval-gate.md) | Quote approval before expensive generation |
 | [0003-mvp-scope.md](./adr/0003-mvp-scope.md) | MVP inclusions and explicit exclusions |
+| [0012-native-video-engine.md](./adr/0012-native-video-engine.md) | Owned preview/cloud export engine and scene-aware editing |
 
 ### Runbooks
 
@@ -54,6 +56,7 @@ docs                  This documentation
 
 - Documentary and listicle modes only
 - 1080p 16:9 MP4 export only
-- No billing, mobile app, advanced motion graphics, or full editor polish
+- Initial scope is historical; native motion graphics and editor capabilities are
+  specified in [ADR 0012](./adr/0012-native-video-engine.md).
 
 See [adr/0003-mvp-scope.md](./adr/0003-mvp-scope.md) for the full scope definition.

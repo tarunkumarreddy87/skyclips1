@@ -11,7 +11,8 @@ export function HomeStudio() {
   useEffect(() => {
     try {
       const seeded =
-        sessionStorage.getItem("skyclip_seed_prompt") ??
+        new URLSearchParams(window.location.search).get("prompt")?.slice(0, 3600) ||
+        sessionStorage.getItem("skyclip_seed_prompt") ||
         sessionStorage.getItem("hanuman_seed_prompt");
       if (seeded) {
         sessionStorage.removeItem("skyclip_seed_prompt");
@@ -24,7 +25,7 @@ export function HomeStudio() {
   }, []);
 
   return (
-    <div className="relative flex min-h-svh w-full flex-col bg-[#1a1a1a] text-white">
+    <div className="relative flex min-h-svh w-full flex-col bg-background text-foreground">
       <StudioTopBar />
       <div className="mx-auto flex w-full max-w-3xl flex-1 flex-col px-4 pb-16 pt-14 md:px-6 md:pt-16">
         <div className="flex flex-1 flex-col justify-center py-8 md:min-h-[46vh] md:py-12">

@@ -19,12 +19,16 @@ build/
 
 # Next.js build output (regenerated in image)
 apps/web/.next/
+apps/web/.next-dev/
 apps/web/out/
 
 # Environment & secrets
 .env
 .env.local
 .env.*.local
+**/.env
+**/.env.*
+**/*.tsbuildinfo
 
 # IDE / OS
 .idea/
@@ -47,6 +51,7 @@ workers/media/proofs/*.manifest.json
 
 # Turbo cache
 .turbo/
+.cache/
 
 # Git
 .git/
@@ -54,3 +59,16 @@ workers/media/proofs/*.manifest.json
 # Docs (not needed at runtime)
 docs/
 README.md
+
+# Demo / e2e / local scratch (keep Docker build context small)
+scripts/
+tmp/
+tmp-*/
+workers/media/proofs/
+reference-frames/
+video-review/
+memory/
+/*.png
+/*.mp4
+
+

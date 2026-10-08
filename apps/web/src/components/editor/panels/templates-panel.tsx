@@ -2,15 +2,19 @@
 
 import { THEME_LIST, type ThemeId } from "@hanuman/shared-types";
 import { useEditorStore } from "@/lib/editor/store";
+import { ClipTemplateProperties } from "./clip-template-properties";
 
 export function TemplatesPanel() {
+  const selected = useEditorStore(s => s.getSelectedItem());
   const themeId = useEditorStore((s) => s.timeline.settings.themeId ?? "standard");
   const updateSettings = useEditorStore((s) => s.updateSettings);
+
+  if (selected?.type === "video" && selected.motionTemplate) return <ClipTemplateProperties key={selected.id} item={selected} />;
 
   return (
     <div className="space-y-2 p-3">
       <p className="text-xs leading-relaxed text-zinc-500">
-        Visual theme for this video — grade and brand palette ship in the Remotion MP4.
+        Visual theme for this video — grade and brand palette ship in the native engine MP4.
       </p>
       {THEME_LIST.map((t) => {
         const active = t.id === themeId;

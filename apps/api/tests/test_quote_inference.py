@@ -68,3 +68,10 @@ def test_density_warning_for_thin_30min_brief():
     result_long = infer_quote(project_long, brief_long)
     assert result_long.duration_sec == 1800
     assert any("talking point" in w.lower() for w in result_long.warnings)
+
+
+def test_credit_estimate_charges_for_each_started_video_minute():
+    project = _Project(FormatMode.DOCUMENTARY, title="Ocean story")
+    for duration_sec, expected_credits in ((1, 24), (60, 24), (61, 48), (120, 48)):
+        brief = _Brief(target_duration_sec=duration_sec)
+        assert infer_quote(project, brief).credit_estimate == expected_credits

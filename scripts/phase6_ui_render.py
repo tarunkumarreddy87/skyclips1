@@ -1,4 +1,4 @@
-"""Phase 6: UI-equivalent Render path for Indian Fighters (Temporal + Remotion).
+"""Phase 6: UI-equivalent Render path for Indian Fighters (Temporal + native engine).
 
 Mirrors apps/web `startRender(projectId, manifest)` after editor flushSave —
 POST /projects/{id}/render with the live timeline body. Not the direct bridge.
@@ -19,7 +19,7 @@ PROJECT_ID = os.environ.get(
     "PHASE6_PROJECT_ID", "1fbee2bc-1a33-4518-847c-d54665285d9d"
 )
 API = os.environ.get("API_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
-OUT_DIR = REPO / "packages" / "remotion-renderer" / "proofs"
+OUT_DIR = REPO / "workers" / "media" / "proofs"
 OUT_MP4 = OUT_DIR / "phase6-indian-fighters-ui-render.mp4"
 LOG = REPO / "scripts" / "_phase6_ui_render.log"
 POLL_SEC = float(os.environ.get("PHASE6_POLL_SEC", "15"))

@@ -174,7 +174,7 @@ export const generationStages: GenerationStage[] = [
   { id: "voice", label: "Voiceover", description: "Synthesizing speech", status: "pending" },
   { id: "scenes", label: "Scene planning", description: "Selecting B-roll assets", status: "pending" },
   { id: "timeline", label: "Timeline", description: "Building render manifest", status: "pending" },
-  { id: "render", label: "Render", description: "Remotion video export", status: "pending" },
+  { id: "render", label: "Render", description: "Native video export", status: "pending" },
 ];
 
 export const editorScenes = [

@@ -8,7 +8,7 @@ from urllib.parse import urlparse, urlunparse
 
 
 
-from pydantic import model_validator
+from pydantic import Field, model_validator
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -99,11 +99,14 @@ class Settings(BaseSettings):
     temporal_namespace: str = "default"
 
     temporal_task_queue_orchestrator: str = "orchestrator"
+    orchestrator_max_concurrent_activities: int = Field(default=2, ge=1, le=16)
 
     temporal_task_queue_media: str = "media"
 
     # Prefer real LLM/TTS; stub is opt-in via HANUMAN_STUB_MODE=true.
     hanuman_stub_mode: bool = False
+    # Opt in until editorial decisions have been evaluated on representative runs.
+    production_director_enabled: bool = False
 
 
 
@@ -126,14 +129,28 @@ class Settings(BaseSettings):
 
 
     openrouter_api_key: str = ""
+    render_service_url: str = "http://render-service:8081"
+    render_service_api_key: str = ""
+    openrouter_image_api_key: str = ""
 
     openrouter_model: str = "deepseek/deepseek-v4-flash"
 
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
+    # A local account may have less remaining credit than a task's ideal budget.
+    # The client clamps each request to this ceiling instead of failing before it starts.
+    openrouter_max_tokens: int = Field(default=2048, ge=64, le=16384)
+
+    # Keep an overloaded free provider from holding a workflow activity for minutes.
+    openrouter_timeout_seconds: float = Field(default=45.0, ge=10.0, le=180.0)
+
+    # Used only after the selected provider times out, rate-limits, or returns unusable output.
+    openrouter_fallback_model: str = "openrouter/free"
+
 
 
     pexels_api_key: str = ""
+    serpapi_api_key: str = ""
 
 
 

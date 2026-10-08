@@ -13,10 +13,15 @@ from src.activities.pipeline import (
     generate_voice,
     parse_script,
     plan_scenes,
+    review_timeline,
     run_research,
     validate_brief,
 )
 from src.config import settings
+from src.activities.production_agent import choose_production_tool, plan_production
+from src.activities.production_motion import create_motion_graphics
+from src.activities.production_sound import design_sound
+from src.activities.production_visuals import direct_visuals
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -34,8 +39,15 @@ async def main() -> None:
     worker = Worker(
         client,
         task_queue=settings.temporal_task_queue_orchestrator,
+        max_concurrent_activities=settings.orchestrator_max_concurrent_activities,
         workflows=[VideoGenerationWorkflow, VideoRenderWorkflow, HealthCheckWorkflow],
         activities=[
+            choose_production_tool,
+            plan_production,
+            create_motion_graphics,
+            design_sound,
+            direct_visuals,
+            review_timeline,
             validate_brief,
             run_research,
             generate_script,

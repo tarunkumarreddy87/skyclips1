@@ -29,7 +29,7 @@ export function isUuid(value: string): boolean {
 }
 
 /** px per second on the timeline ruler */
-export const MIN_ZOOM = 2;
+export const MIN_ZOOM = 0.01;
 export const MAX_ZOOM = 80;
 export const DEFAULT_ZOOM = 8;
 /** When auto-fitting, show this edit window (dense clips), not the full project length */
@@ -49,8 +49,8 @@ export function computeFitZoom(
 /** Fit the entire project into the viewport (overview). */
 export function computeOverviewZoom(durationMs: number, viewportWidthPx: number): number {
   if (viewportWidthPx <= 0 || durationMs <= 0) return DEFAULT_ZOOM;
-  const zoom = viewportWidthPx / (durationMs / 1000);
-  return clamp(Math.round(zoom * 10) / 10, MIN_ZOOM, MAX_ZOOM);
+  const zoom = Math.max(1, viewportWidthPx - 24) / (durationMs / 1000);
+  return clamp(zoom, MIN_ZOOM, MAX_ZOOM);
 }
 
 /** Zoom level that shows roughly `windowMs` around the playhead. */

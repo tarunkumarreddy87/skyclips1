@@ -1,33 +1,25 @@
 "use client";
 
+import Image from "next/image";
 import { motion, useReducedMotion } from "motion/react";
 import { cn } from "@/lib/utils";
+import { landingMedia } from "./landing-media-data";
 
 type Thumb = {
   title: string;
   overlay: string;
   tone: string;
+  image?: string;
 };
 
-const ROW_A: Thumb[] = [
-  { title: "WW2", overlay: "BATTLE OF BRITAIN", tone: "from-stone-800 via-zinc-900 to-amber-950/40" },
-  { title: "Luxury", overlay: "$150,000 PER NIGHT", tone: "from-sky-950 via-zinc-900 to-slate-950" },
-  { title: "AI", overlay: "TOO SMART?", tone: "from-cyan-950 via-neutral-900 to-blue-950" },
-  { title: "Auto", overlay: "TOYOTA 2026", tone: "from-red-950/50 via-zinc-900 to-stone-950" },
-  { title: "Empire", overlay: "INDIAN HISTORY", tone: "from-amber-950 via-stone-900 to-orange-950/50" },
-  { title: "Space", overlay: "MARS COLONY", tone: "from-indigo-950/40 via-zinc-900 to-black" },
-  { title: "Food", overlay: "STREET FOOD", tone: "from-yellow-950/40 via-neutral-900 to-orange-950/30" },
-];
-
-const ROW_B: Thumb[] = [
-  { title: "Ali", overlay: "THE GREATEST", tone: "from-zinc-800 via-neutral-900 to-stone-950" },
-  { title: "Ocean", overlay: "DEEP BLUE", tone: "from-teal-950 via-slate-900 to-cyan-950" },
-  { title: "Myth", overlay: "SkyClip", tone: "from-orange-950/60 via-stone-950 to-red-950/40" },
-  { title: "Climate", overlay: "CLIMATE NOW", tone: "from-emerald-950 via-zinc-900 to-teal-950" },
-  { title: "Rome", overlay: "ANCIENT ROME", tone: "from-stone-700 via-amber-950/30 to-zinc-950" },
-  { title: "Tech", overlay: "STARTUPS 2026", tone: "from-blue-950 via-zinc-900 to-slate-950" },
-  { title: "War", overlay: "PACIFIC FRONT", tone: "from-neutral-800 via-stone-900 to-black" },
-];
+const thumbnails: Thumb[] = landingMedia.map((item, index) => ({
+  title: item.kind,
+  overlay: item.label.toUpperCase(),
+  tone: index % 2 ? "from-violet-950 to-slate-950" : "from-indigo-950 to-zinc-950",
+  image: item.image,
+}));
+const ROW_A = thumbnails.slice(0, 11);
+const ROW_B = thumbnails.slice(11);
 
 function ThumbCard({ thumb }: { thumb: Thumb }) {
   return (
@@ -38,6 +30,7 @@ function ThumbCard({ thumb }: { thumb: Thumb }) {
       )}
     >
       <div className={cn("absolute inset-0 bg-gradient-to-br", thumb.tone)} />
+      {thumb.image ? <Image src={thumb.image} alt="" fill sizes="236px" className="object-cover transition duration-700 group-hover:scale-110" /> : null}
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.14),transparent_45%)]" />
       <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
       <p className="absolute inset-x-3 bottom-3 text-center font-display text-[13px] font-bold leading-tight tracking-wide text-white drop-shadow-md sm:text-sm">

@@ -7,14 +7,11 @@ import {
   ChevronUp,
   Captions,
   Check,
-  Download,
   Eye,
   EyeOff,
   Film,
-  GripVertical,
   ImageIcon,
   Keyboard,
-  Layers,
   Lock,
   LockOpen,
   Mic,
@@ -26,6 +23,10 @@ import {
   RotateCcw,
   Redo2,
   Scissors,
+  StepBack,
+  StepForward,
+  Maximize2,
+  Magnet,
   Settings2,
   Sparkles,
   Trash2,
@@ -35,9 +36,7 @@ import {
   VolumeX,
   TriangleAlert,
 } from "lucide-react";
-import type { LucideIcon } from "lucide-react";
 import { useEditorStore } from "@/lib/editor/store";
-import { downloadVideo } from "@/lib/api-client";
 import type { TrackType } from "@/lib/editor/types";
 import { listEditorValidationIssues } from "@/lib/editor/validate-render";
 import {
@@ -48,6 +47,7 @@ import {
   TRACK_META,
   resolveVisibleTracks,
   trackRowHeight,
+  layoutTrack,
 } from "@/lib/editor/timeline-layout";
 import {
   centerPlayheadInView,
@@ -74,28 +74,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { TimelineClipBlock } from "./timeline-clip-block";
-import { CaptionGroupBlock } from "./caption-group-block";
-import { combineCaptionsForTimeline } from "@/lib/editor/caption-groups";
 import { TimelinePlayhead, type TimelinePlayheadHandle } from "./timeline-playhead";
+import {
+  TimelineTrackLane,
+  type TimelineTrackLaneHandlers,
+} from "./timeline-track-lane";
 import { IconButton } from "./icon-button";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { createPlayheadScrubController } from "@/lib/editor/playhead-scrub";
-import { clipsAbut } from "@/lib/editor/transition-abut";
 
 const PLAYBACK_SPEEDS = [0.5, 0.75, 1, 1.25, 1.5, 2] as const;
-
-const TRACK_ICONS: Record<TrackType, LucideIcon> = {
-  captions: Captions,
-  text: Type,
-  video: Film,
-  broll: ImageIcon,
-  animation: Sparkles,
-  narration: Mic,
-  music: Music2,
-  sfx: Volume2,
-};
 
 function formatSpeed(speed: number): string {
   return `${speed}x`;
@@ -121,8 +110,8 @@ function TransportPlayheadTime({
       className="ml-1 whitespace-nowrap font-mono text-[10px] tabular-nums tracking-tight text-zinc-300 sm:text-[11px]"
       title={
         exportDurationIsConfirmed
-          ? "Confirmed length from last Remotion render"
-          : "Timeline time / estimated export length (transitions may shorten the MP4)."
+          ? "Confirmed length from last native render"
+          : "Playback position / timeline duration. Preview and export use the same clock."
       }
     >
       {formatTimecode(playheadMs)}
@@ -150,9 +139,15 @@ function TimelineHoverGuide({
   hoverMs: number | null;
   tracksAreaHeight: number;
 }) {
-  const playheadMs = useEditorStore((s) => s.ui.playheadMs);
+  // Subscribe to playhead only while hovering — selector returns null when idle so
+  // playhead ticks do not re-render this leaf during playback.
+  const playheadMs = useEditorStore((s) =>
+    hoverMs == null ? null : s.ui.playheadMs,
+  );
   const zoom = useEditorStore((s) => s.timeline.settings.zoom);
-  if (hoverMs == null || Math.abs(hoverMs - playheadMs) <= 40) return null;
+  if (hoverMs == null || playheadMs == null || Math.abs(hoverMs - playheadMs) <= 40) {
+    return null;
+  }
   const hoverX = msToPx(hoverMs, zoom);
   return (
     <div
@@ -161,9 +156,43 @@ function TimelineHoverGuide({
     >
       <div className="absolute -top-0.5 left-1/2 h-2 w-2 -translate-x-1/2 rounded-full bg-white/60" />
       <div className="absolute left-1.5 top-0.5 rounded bg-black/75 px-1 py-0.5 font-mono text-[9px] tabular-nums text-zinc-200">
-        {formatTimecode(hoverMs)}
+        Hover {formatTimecode(hoverMs)}
       </div>
     </div>
+  );
+}
+
+/** Play/pause isolated so isPlaying toggles do not re-render the full shell. */
+function TransportPlayButton({
+  compact,
+  onBeforeToggle,
+}: {
+  compact: boolean;
+  onBeforeToggle?: () => void;
+}) {
+  const isPlaying = useEditorStore((s) => s.ui.isPlaying);
+  const setPlaying = useEditorStore((s) => s.setPlaying);
+  return (
+    <button
+      type="button"
+      className={cn(
+        "flex shrink-0 items-center justify-center rounded-full border border-white/10 shadow-[0_4px_12px_rgba(0,0,0,0.24)] transition-colors",
+        compact ? "size-8" : "size-9",
+        "bg-[#3B82F6] text-white hover:bg-[#2563EB] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-300",
+      )}
+      onClick={() => {
+        onBeforeToggle?.();
+        setPlaying(!useEditorStore.getState().ui.isPlaying);
+      }}
+      title={isPlaying ? "Pause (Space)" : "Play (Space)"}
+      data-timeline-play-button
+    >
+      {isPlaying ? (
+        <Pause className="size-3.5 sm:size-4" />
+      ) : (
+        <Play className="size-3.5 fill-current pl-0.5 sm:size-4" />
+      )}
+    </button>
   );
 }
 
@@ -177,8 +206,7 @@ export function TimelineSection() {
   const lastRenderedDurationMs = useEditorStore((s) => s.ui.lastRenderedDurationMs);
   const zoom = useEditorStore((s) => s.timeline.settings.zoom);
   const settings = useEditorStore((s) => s.timeline.settings);
-  const isPlaying = useEditorStore((s) => s.ui.isPlaying);
-  const playheadMs = useEditorStore((s) => s.ui.playheadMs);
+  // playheadMs / isPlaying intentionally NOT selected here — leaves + subscribe only.
   const playbackSpeed = useEditorStore((s) => s.ui.playbackSpeed);
   const selectedItemId = useEditorStore((s) => s.ui.selectedItemId);
   const showTransitions = useEditorStore((s) => s.timeline.settings.showTransitions);
@@ -218,7 +246,6 @@ export function TimelineSection() {
   // the playhead during playback does NOT flip userScrolledAwayRef and break follow.
   const programmaticScrollGenRef = useRef(0);
   const [hoverMs, setHoverMs] = useState<number | null>(null);
-  const [showAllTracks, setShowAllTracks] = useState(false);
   /** Scroll-window cull so long timelines (100+ clips) do not mount offscreen DOM. */
   const [viewRangeMs, setViewRangeMs] = useState({ startMs: 0, endMs: durationMs });
   const [marquee, setMarquee] = useState<{
@@ -234,22 +261,16 @@ export function TimelineSection() {
     return listEditorValidationIssues(projectId, useEditorStore.getState());
   }, [projectId, tracks, assets, durationMs]);
 
-  const timelineWidth = Math.max(msToPx(durationMs, zoom), 1);
+  // Keep every timeline layer on the same finite canvas. Rounding avoids sub-pixel drift between the ruler, clips, and playhead at long durations.
+  const timelineWidth = Math.max(Math.ceil(msToPx(Math.max(0, durationMs), zoom)), 1);
 
   const visibleTracks = useMemo(
-    () => resolveVisibleTracks(tracks, showAllTracks, trackOrder),
-    [tracks, showAllTracks, trackOrder],
+    () => resolveVisibleTracks(tracks, false, trackOrder),
+    [tracks, trackOrder],
   );
 
-  const hiddenOptionalCount = useMemo(() => {
-    const shown = new Set(visibleTracks.map((t) => t.id));
-    return tracks.filter(
-      (t) => !t.hidden && t.items.length === 0 && !shown.has(t.id),
-    ).length;
-  }, [tracks, visibleTracks]);
-
   const tracksAreaHeight = visibleTracks.reduce(
-    (sum, t) => sum + trackRowHeight(t.type) + TIMELINE_TRACK_GAP,
+    (sum, t) => sum + layoutTrack(t).height + TIMELINE_TRACK_GAP,
     TIMELINE_TRACK_GAP,
   );
 
@@ -328,7 +349,7 @@ export function TimelineSection() {
         onVisual: (ms) => {
           const z = useEditorStore.getState().timeline.settings.zoom;
           playheadRef.current?.setPositionPx(msToPx(ms, z), ms);
-          // Drive Remotion at pointer rate (store playhead stays throttled).
+          // Drive native engine at pointer rate (store playhead stays throttled).
           useEditorStore.getState().setPreviewScrubMs(ms);
         },
       });
@@ -381,7 +402,7 @@ export function TimelineSection() {
       el.removeEventListener("wheel", onWheel);
       el.removeEventListener("scroll", onScroll);
     };
-  }, [isPlaying, setZoom, zoom]);
+  }, [setZoom, zoom]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -389,9 +410,14 @@ export function TimelineSection() {
     fitEditWindow();
   }, [fitEditWindow]);
 
+  // Reset follow-scroll lock when playback starts (no shell re-render on isPlaying).
   useEffect(() => {
-    if (isPlaying) userScrolledAwayRef.current = false;
-  }, [isPlaying]);
+    return useEditorStore.subscribe((state, prev) => {
+      if (state.ui.isPlaying && !prev.ui.isPlaying) {
+        userScrolledAwayRef.current = false;
+      }
+    });
+  }, []);
 
   /** VidRush-style “Add to Agent” — Ctrl/⌘+L mentions current selection. */
   useEffect(() => {
@@ -523,13 +549,16 @@ export function TimelineSection() {
           const ids: string[] = [];
           let yCursor = TIMELINE_RULER_HEIGHT;
           for (const track of visibleTracks) {
-            const rowH = trackRowHeight(track.type);
+            const layout = layoutTrack(track);
+            const rowH = layout.height;
             const rowTop = yCursor;
             const rowBottom = yCursor + rowH;
             yCursor += rowH + TIMELINE_TRACK_GAP;
             if (rowBottom < top || rowTop > bottom) continue;
             for (const item of track.items) {
               if (item.hidden) continue;
+              const itemTop = rowTop + (layout.offsets.get(item.id) ?? 0);
+              if (itemTop > bottom || itemTop + trackRowHeight(track.type) < top) continue;
               const clipLeft = msToPx(item.startMs, zoom);
               const clipRight = msToPx(item.endMs, zoom);
               if (clipRight < left || clipLeft > right) continue;
@@ -651,6 +680,28 @@ export function TimelineSection() {
     [selectItem, setPlayhead],
   );
 
+  const laneHandlers = useMemo<TimelineTrackLaneHandlers>(
+    () => ({
+      onSelectItem: (itemId) => selectItemLinked(itemId),
+      onOpenInspector: () => setRightPanelOpen(true),
+      onSelectOrAddTransition: (afterItemId, hasNext) => {
+        if (!hasNext) return;
+        const state = useEditorStore.getState();
+        const existing = state.timeline.transitions.find(
+          (t) => t.afterItemId === afterItemId && t.enabled,
+        );
+        if (existing) {
+          selectTransition(existing.id);
+          return;
+        }
+        const id = addTransition(afterItemId, "fade", 500);
+        if (id) selectTransition(id);
+      },
+      onEmptyLaneAdd: () => setRightPanelOpen(true),
+    }),
+    [selectItemLinked, setRightPanelOpen, selectTransition, addTransition],
+  );
+
   const durationSec = durationMs / 1000;
   const exportDurationMs = useMemo(() => {
     if (lastRenderedDurationMs && lastRenderedDurationMs > 0) return lastRenderedDurationMs;
@@ -664,22 +715,16 @@ export function TimelineSection() {
   return (
     <section
       className={cn(
-        "editor-timeline-shell flex h-full min-h-0 flex-col overflow-hidden",
-        agentPanelOpen && "editor-timeline-shell--agent-open",
-        agentBusy && "editor-timeline-shell--agent-busy",
+        "editor-timeline-shell editor-timeline-light flex h-full min-h-0 flex-col overflow-hidden",
       )}
     >
       {/* Transport — single row; compact when agent panel narrows the column */}
       <div
-        className="shrink-0 border-b border-white/[0.06] px-2 py-1.5 sm:px-3"
-        style={{ minHeight: agentPanelOpen ? 44 : TIMELINE_CONTROLS_HEIGHT }}
+        className="editor-timeline-chrome shrink-0 border-b border-zinc-200 bg-white px-2 py-1.5 sm:px-3"
+        style={{ minHeight: TIMELINE_CONTROLS_HEIGHT }}
       >
         <div
-          className={cn(
-            // Allow wrapping instead of forcing a single row that overlaps at half-screen.
-            // The transport naturally flows to two rows on narrow widths.
-            "flex min-h-9 flex-wrap items-center justify-between gap-x-1 gap-y-1 px-0.5",
-          )}
+          className="flex min-h-11 flex-nowrap items-center gap-1 overflow-hidden px-0.5 sm:gap-2"
         >
           <div className="flex min-w-0 shrink items-center gap-0.5">
             <IconButton
@@ -695,7 +740,7 @@ export function TimelineSection() {
               size="sm"
               className={cn(
                 "size-7 shrink-0 rounded-lg hover:bg-white/[0.08] disabled:opacity-30 sm:size-8",
-                agentPanelOpen ? "hidden" : "hidden sm:inline-flex",
+                "inline-flex",
               )}
               onClick={() => redo()}
               title="Redo (Ctrl/⌘+Y)"
@@ -707,7 +752,6 @@ export function TimelineSection() {
               size="sm"
               className={cn(
                 "size-7 shrink-0 rounded-lg hover:bg-white/[0.08] sm:size-8",
-                agentPanelOpen && "hidden lg:inline-flex",
               )}
               onClick={() => {
                 setPlaying(false);
@@ -719,30 +763,17 @@ export function TimelineSection() {
               <RotateCcw className="size-[15px]" />
             </IconButton>
 
-            {!agentPanelOpen ? <TransportDivider /> : null}
+          </div>
 
-            <button
-              type="button"
-              className={cn(
-                "flex shrink-0 items-center justify-center rounded-full border border-white/10 shadow-[0_4px_12px_rgba(0,0,0,0.24)] transition-colors",
-                agentPanelOpen ? "size-8" : "size-9",
-                isPlaying
-                  ? "bg-white text-black hover:bg-zinc-200"
-                  : "bg-[#3B82F6] text-white hover:bg-[#2563EB]",
-              )}
-              onClick={() => {
+          <div className="flex min-w-0 flex-1 items-center justify-center gap-0.5 sm:gap-1">
+            <IconButton title="Previous frame" size="sm" onClick={() => { setPlaying(false); setPlayhead(useEditorStore.getState().ui.playheadMs - 1000 / timeline.fps); userSeekRef.current = true; }}><StepBack className="size-4" /></IconButton>
+            <TransportPlayButton
+              compact={agentPanelOpen}
+              onBeforeToggle={() => {
                 userScrolledAwayRef.current = false;
-                setPlaying(!isPlaying);
               }}
-              title={isPlaying ? "Pause (Space)" : "Play (Space)"}
-            >
-              {isPlaying ? (
-                <Pause className="size-3.5 fill-current sm:size-4" />
-              ) : (
-                <Play className="size-3.5 fill-current pl-0.5 sm:size-4" />
-              )}
-            </button>
-
+            />
+            <IconButton title="Next frame" size="sm" onClick={() => { setPlaying(false); setPlayhead(useEditorStore.getState().ui.playheadMs + 1000 / timeline.fps); userSeekRef.current = true; }}><StepForward className="size-4" /></IconButton>
             <IconButton
               size="sm"
               className="size-7 shrink-0 rounded-lg hover:bg-white/[0.08] disabled:opacity-30 sm:size-8"
@@ -750,7 +781,8 @@ export function TimelineSection() {
               title="Split at playhead (S)"
               onClick={() => {
                 if (!selectedItemId) return;
-                const rightId = splitItem(selectedItemId, playheadMs);
+                const ph = useEditorStore.getState().ui.playheadMs;
+                const rightId = splitItem(selectedItemId, ph);
                 if (rightId) selectItem(rightId);
               }}
             >
@@ -800,33 +832,42 @@ export function TimelineSection() {
 
           <div
             className={cn(
-              "flex min-w-0 items-center justify-end gap-1",
-              agentPanelOpen ? "max-w-[140px] flex-1" : "flex-1 basis-[120px] sm:max-w-[360px] sm:basis-auto sm:justify-center",
+              "flex shrink-0 flex-nowrap items-center justify-end gap-1",
             )}
           >
+            <span
+              className={cn(
+                "hidden text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-500",
+                !agentPanelOpen && "lg:inline",
+              )}
+            >
+              Timeline Scale
+            </span>
             <IconButton
               size="sm"
               className="size-7 shrink-0 rounded-lg border border-white/[0.07] bg-black/20 hover:bg-white/[0.08]"
-              onClick={() => applyZoomCentered(zoom - 2)}
+              onClick={() => applyZoomCentered(zoom / 1.3)}
               title="Zoom out"
             >
               <Minus className="size-3.5" />
             </IconButton>
             <Slider
               className={cn(
-                "w-full [&_[data-slot=slider-track]]:h-1 [&_[data-slot=slider-track]]:bg-[#2a2a2a] [&_[data-slot=slider-range]]:bg-[#2563EB] [&_[data-slot=slider-thumb]]:size-3 [&_[data-slot=slider-thumb]]:border-[#2563EB] [&_[data-slot=slider-thumb]]:bg-[#2563EB]",
-                agentPanelOpen ? "min-w-[36px] max-w-[64px]" : "min-w-[48px] max-w-[96px]",
+                "w-20 [&_[data-slot=slider-track]]:h-1 [&_[data-slot=slider-thumb]]:size-3",
+                !agentPanelOpen && "hidden xl:block",
+                agentPanelOpen && "hidden",
               )}
-              min={MIN_ZOOM}
-              max={MAX_ZOOM}
-              step={1}
-              value={[zoom]}
-              onValueChange={(v) => applyZoomCentered(sliderValue(v))}
+              aria-label="Timeline zoom"
+              min={Math.log(MIN_ZOOM)}
+              max={Math.log(MAX_ZOOM)}
+              step={0.01}
+              value={[Math.log(zoom)]}
+              onValueChange={(v) => applyZoomCentered(Math.exp(sliderValue(v)))}
             />
             <IconButton
               size="sm"
               className="size-7 shrink-0 rounded-lg border border-white/[0.07] bg-black/20 hover:bg-white/[0.08]"
-              onClick={() => applyZoomCentered(zoom + 2)}
+              onClick={() => applyZoomCentered(zoom * 1.3)}
               title="Zoom in"
             >
               <Plus className="size-3.5" />
@@ -835,15 +876,12 @@ export function TimelineSection() {
             <div
               className={cn(
                 "ml-1 items-center gap-0.5 rounded-lg border border-white/[0.07] bg-black/20 p-0.5",
-                agentPanelOpen ? "hidden" : "hidden sm:flex",
+                "flex",
               )}
             >
               {(
                 [
-                  { label: "Fit", action: fitOverview },
-                  { label: "30s", action: () => zoomWindow(30_000) },
-                  { label: "1m", action: () => zoomWindow(60_000) },
-                  { label: "Edit", action: fitEditWindow },
+                  { label: "Fit View", action: fitOverview },
                 ] as const
               ).map(({ label, action }) => (
                 <button
@@ -852,44 +890,26 @@ export function TimelineSection() {
                   onClick={action}
                   className="rounded-md px-1.5 py-1 text-[10px] font-semibold text-zinc-500 transition-colors hover:bg-white/[0.1] hover:text-zinc-100"
                   title={
-                    label === "Fit"
+                    label === "Fit View"
                       ? "Overview — whole project"
                       : label === "Edit"
                         ? "Edit window around playhead"
                         : `Show ~${label} around playhead`
                   }
                 >
-                  {label}
+                  <Maximize2 className="size-3.5" aria-label={label} />
                 </button>
               ))}
+              <IconButton title="Timeline snapping" aria-pressed={settings.snappingEnabled} size="sm" onClick={() => updateSettings({ snappingEnabled: !settings.snappingEnabled })}><Magnet className={cn("size-3.5", settings.snappingEnabled && "text-sky-400")} /></IconButton>
             </div>
           </div>
 
           <div
             className={cn(
-              "flex shrink-0 items-center gap-0.5 pl-1",
+              "flex shrink-0 flex-nowrap items-center gap-0.5 pl-1",
               !agentPanelOpen && "border-l border-white/[0.08] pl-1.5",
             )}
           >
-            <IconButton
-              size="sm"
-              className={cn(
-                "size-8 rounded-lg hover:bg-white/[0.08]",
-                agentPanelOpen ? "hidden" : "hidden sm:inline-flex",
-                showAllTracks && "bg-white/[0.08] text-sky-300",
-              )}
-              onClick={() => setShowAllTracks((v) => !v)}
-              title={
-                showAllTracks
-                  ? "Hide empty tracks"
-                  : hiddenOptionalCount > 0
-                    ? `Show empty tracks (${hiddenOptionalCount})`
-                    : "All tracks visible"
-              }
-            >
-              <Layers className="size-[15px]" />
-            </IconButton>
-
             {validationIssues.length > 0 ? (
               <DropdownMenu>
                 <DropdownMenuTrigger
@@ -941,8 +961,7 @@ export function TimelineSection() {
                   <IconButton
                     size="sm"
                     className={cn(
-                      "size-8 rounded-lg hover:bg-white/[0.08]",
-                      agentPanelOpen ? "hidden" : "hidden md:inline-flex",
+                      "size-8 rounded-lg hover:bg-white/[0.08] inline-flex",
                     )}
                     title="Keyboard shortcuts"
                   />
@@ -978,7 +997,7 @@ export function TimelineSection() {
             <IconButton
               size="sm"
               className={cn(
-                "size-7 rounded-lg hover:bg-white/[0.08] sm:size-8",
+                "size-7 rounded-lg hover:bg-white/[0.08] sm:size-8 inline-flex",
                 settings.previewMuted && "text-zinc-500",
               )}
               title={settings.previewMuted ? "Unmute preview" : "Mute preview"}
@@ -1070,71 +1089,51 @@ export function TimelineSection() {
             >
               <Settings2 className="size-[15px]" />
             </IconButton>
-            <IconButton
-              size="sm"
-              className={cn(
-                "size-7 rounded-lg hover:bg-white/[0.08] sm:size-8",
-                agentPanelOpen && "hidden",
-              )}
-              title="Download video"
-              onClick={async () => {
-                if (!projectId) return;
-                try {
-                  const artifact = await downloadVideo(projectId);
-                  window.open(artifact.downloadUrl, "_blank", "noopener,noreferrer");
-                } catch {
-                  toast.error("Video not ready");
-                }
-              }}
-            >
-              <Download className="size-[15px]" />
-            </IconButton>
           </div>
         </div>
       </div>
 
       <div className="flex min-h-0 flex-1 overflow-hidden">
         <div className="editor-scroll flex min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
-          {/* Track labels */}
+          {/* Compact track rail; labels and per-track menus stay out of the timeline surface. */}
           <div
-            className="sticky left-0 z-10 shrink-0 border-r border-white/[0.06] bg-[#0e0e10]"
+            data-track-rail
+            className="editor-timeline-chrome sticky left-0 z-10 shrink-0 overflow-hidden border-r border-transparent bg-transparent"
             style={{ width: TIMELINE_LABEL_WIDTH }}
           >
-            <div
-              className="flex items-end justify-between border-b border-white/[0.05] px-2.5 pb-1.5"
-              style={{ height: TIMELINE_RULER_HEIGHT }}
-            >
-              <span className="text-[9px] font-semibold uppercase tracking-[0.16em] text-zinc-600">
-                Timeline
-              </span>
-              {hiddenOptionalCount > 0 ? (
-                <button
-                  type="button"
-                  className="text-[9px] text-zinc-600 hover:text-zinc-400"
-                  onClick={() => setShowAllTracks((v) => !v)}
-                  title="Toggle empty tracks"
-                >
-                  {showAllTracks ? (
-                    <EyeOff className="size-3" />
-                  ) : (
-                    <Eye className="size-3" />
-                  )}
-                </button>
-              ) : null}
-            </div>
+            <div className="border-b border-white/[0.05]" style={{ height: TIMELINE_RULER_HEIGHT }} />
             {visibleTracks.map((track, index) => {
-              const h = trackRowHeight(track.type);
+              const h = layoutTrack(track).height;
               const meta = TRACK_META[track.type];
-              const Icon = TRACK_ICONS[track.type];
               const isHidden = Boolean(track.hidden);
               const isLocked = Boolean(track.locked);
               return (
                 <div
                   key={track.id}
+                  data-track-rail-row
                   className={cn(
-                    "group relative flex items-center gap-1 px-1.5",
+                    "group relative flex cursor-grab items-center justify-center px-0 active:cursor-grabbing",
                     isHidden && "opacity-45",
                   )}
+                  draggable
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/timeline-track", track.id);
+                  }}
+                  onDragOver={(event) => {
+                    if (event.dataTransfer.types.includes("text/timeline-track")) {
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                    }
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const fromId = event.dataTransfer.getData("text/timeline-track");
+                    if (!fromId || fromId === track.id) return;
+                    const fromIndex = visibleTracks.findIndex((candidate) => candidate.id === fromId);
+                    const toIndex = visibleTracks.findIndex((candidate) => candidate.id === track.id);
+                    if (fromIndex >= 0 && toIndex >= 0) moveTrack(fromId, toIndex > fromIndex ? 1 : -1);
+                  }}
                   style={{
                     height: h,
                     marginBottom: TIMELINE_TRACK_GAP,
@@ -1142,140 +1141,46 @@ export function TimelineSection() {
                   }}
                   title={`${track.label} · ${track.items.length} clips`}
                 >
-                  <span
-                    className="absolute inset-y-1.5 left-0 w-[2px] rounded-full opacity-90"
-                    style={{ backgroundColor: meta.accent }}
-                    aria-hidden
-                  />
-                  <div className="flex shrink-0 flex-col gap-0">
-                    <button
-                      type="button"
-                      className="inline-flex size-3.5 items-center justify-center rounded text-zinc-600 hover:bg-white/10 hover:text-zinc-200 disabled:opacity-25"
-                      title="Move track up"
-                      disabled={index === 0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        moveTrack(track.id, -1);
-                      }}
-                    >
-                      <ChevronUp className="size-3" />
-                    </button>
-                    <button
-                      type="button"
-                      className="inline-flex size-3.5 items-center justify-center rounded text-zinc-600 hover:bg-white/10 hover:text-zinc-200 disabled:opacity-25"
-                      title="Move track down"
-                      disabled={index >= visibleTracks.length - 1}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        moveTrack(track.id, 1);
-                      }}
-                    >
-                      <ChevronDown className="size-3" />
-                    </button>
-                  </div>
-                  <span
-                    className="inline-flex size-5 shrink-0 cursor-grab items-center justify-center text-zinc-600 active:cursor-grabbing"
-                    title="Drag to reorder track"
-                    role="button"
-                    tabIndex={0}
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                      e.preventDefault();
-                      const startY = e.clientY;
-                      const startIndex = index;
-                      const trackId = track.id;
-                      let lastSwap = startIndex;
-                      const onMove = (ev: PointerEvent) => {
-                        const rowH = trackRowHeight(track.type) + TIMELINE_TRACK_GAP;
-                        const deltaRows = Math.round((ev.clientY - startY) / rowH);
-                        const nextIndex = Math.max(
-                          0,
-                          Math.min(visibleTracks.length - 1, startIndex + deltaRows),
-                        );
-                        if (nextIndex === lastSwap) return;
-                        lastSwap = nextIndex;
-                        const ids = visibleTracks.map((t) => t.id);
-                        const from = ids.indexOf(trackId);
-                        if (from < 0) return;
-                        ids.splice(from, 1);
-                        ids.splice(nextIndex, 0, trackId);
-                        reorderTracksByIds(ids);
-                      };
-                      const onUp = () => {
-                        window.removeEventListener("pointermove", onMove);
-                        window.removeEventListener("pointerup", onUp);
-                        window.removeEventListener("pointercancel", onUp);
-                      };
-                      window.addEventListener("pointermove", onMove);
-                      window.addEventListener("pointerup", onUp);
-                      window.addEventListener("pointercancel", onUp);
-                    }}
-                  >
-                    <GripVertical className="size-3.5" />
+                  <span data-track-rail-grip className="pointer-events-none relative z-10" aria-hidden>
+                    {Array.from({ length: 6 }, (_, dot) => <span key={dot} />)}
                   </span>
-                  <span
-                    className="inline-flex size-6 shrink-0 items-center justify-center rounded-md ring-1 ring-white/[0.06]"
-                    style={{ backgroundColor: meta.accentSoft, color: meta.accent }}
-                  >
-                    <Icon className="size-3.5" />
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <span className="block truncate text-[11px] font-medium tracking-tight text-zinc-300">
-                      {meta.short}
-                    </span>
-                    <span className="block truncate text-[9px] tabular-nums text-zinc-600">
-                      {track.items.length}
-                    </span>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-                    <button
-                      type="button"
-                      className={cn(
-                        "inline-flex size-6 items-center justify-center rounded-md text-zinc-500 hover:bg-white/10 hover:text-zinc-200",
-                        isLocked && "opacity-100 text-amber-400/90",
-                      )}
-                      title={isLocked ? "Unlock track" : "Lock track"}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleTrackLocked(track.id);
-                      }}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      aria-label={`Actions for ${meta.short}`}
+                      title={`${meta.short} track actions`}
+                      className="absolute inset-1 inline-flex items-center justify-center rounded-md border border-transparent text-transparent transition-colors hover:border-white/10 hover:bg-white/[0.06] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-white/30"
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onDragStart={(event) => event.preventDefault()}
                     >
-                      {isLocked ? <Lock className="size-3" /> : <LockOpen className="size-3" />}
-                    </button>
-                    <button
-                      type="button"
-                      className={cn(
-                        "inline-flex size-6 items-center justify-center rounded-md text-zinc-500 hover:bg-white/10 hover:text-zinc-200",
-                        isHidden && "opacity-100 text-zinc-400",
-                      )}
-                      title={isHidden ? "Show track" : "Hide track"}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        toggleTrackHidden(track.id);
-                      }}
-                    >
-                      {isHidden ? <EyeOff className="size-3" /> : <Eye className="size-3" />}
-                    </button>
-                    <button
-                      type="button"
-                      className="inline-flex size-6 items-center justify-center rounded-md text-zinc-500 hover:bg-red-500/15 hover:text-red-300 disabled:opacity-30"
-                      title="Clear all clips on track"
-                      disabled={track.items.length === 0}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (track.items.length === 0) return;
-                        if (
-                          typeof window !== "undefined" &&
-                          !window.confirm(`Clear all clips on ${meta.short}?`)
-                        ) {
-                          return;
-                        }
-                        clearTrackItems(track.id);
-                      }}
-                    >
-                      <Trash2 className="size-3" />
-                    </button>
-                  </div>
+                      <span className="sr-only">Open {meta.short} track actions</span>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent side="right" align="start" sideOffset={6} className="w-48 rounded-xl p-1.5 shadow-xl">
+                      <DropdownMenuGroup>
+                        <DropdownMenuLabel>{meta.short}</DropdownMenuLabel>
+                        <DropdownMenuItem disabled={index === 0} onClick={() => moveTrack(track.id, -1)}>
+                          <ChevronUp />Move up
+                        </DropdownMenuItem>
+                        <DropdownMenuItem disabled={index >= visibleTracks.length - 1} onClick={() => moveTrack(track.id, 1)}>
+                          <ChevronDown />Move down
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => toggleTrackLocked(track.id)}>
+                          <Lock />{isLocked ? "Unlock track" : "Lock track"}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => toggleTrackHidden(track.id)}>
+                          <Eye />{isHidden ? "Show track" : "Hide track"}
+                        </DropdownMenuItem>
+                      </DropdownMenuGroup>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuGroup>
+                        <DropdownMenuItem variant="destructive" disabled={isLocked || track.items.length === 0}
+                          onClick={() => {
+                            if (window.confirm(`Clear all clips on ${meta.short}?`)) clearTrackItems(track.id);
+                          }}>
+                          <Trash2 />Clear track
+                        </DropdownMenuItem>
+                      </DropdownMenuGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               );
             })}
@@ -1285,7 +1190,8 @@ export function TimelineSection() {
           <div
             ref={scrollRef}
             data-timeline-scroll-root
-            className="editor-scroll relative min-w-0 flex-1 cursor-crosshair touch-none overflow-x-auto overflow-y-visible"
+            className="editor-scroll relative min-w-0 flex-1 self-start cursor-crosshair touch-none overflow-x-auto overflow-y-hidden"
+            style={{ height: TIMELINE_RULER_HEIGHT + tracksAreaHeight + 16 }}
             onPointerMove={handleTimelinePointerMove}
             onPointerLeave={handleTimelinePointerLeave}
             onPointerDown={handleTimelineSeek}
@@ -1317,7 +1223,8 @@ export function TimelineSection() {
               ) : null}
               {/* Ruler */}
               <div
-                className="relative border-b border-white/[0.06] bg-[#121212]"
+                data-timeline-ruler
+                className="relative z-10 overflow-visible border-b border-white/[0.08] bg-[#17191d]"
                 style={{ height: TIMELINE_RULER_HEIGHT }}
               >
                 {rulerMarks.map((s) => (
@@ -1326,148 +1233,31 @@ export function TimelineSection() {
                     className="absolute bottom-0 flex flex-col items-start"
                     style={{ left: msToPx(s * 1000, zoom) }}
                   >
-                    <span className="pl-0.5 text-[9px] tabular-nums text-zinc-500">
+                    <span className="whitespace-nowrap pl-0.5 text-[9px] font-medium tabular-nums text-zinc-400">
                       {s >= 60
                         ? `${Math.floor(s / 60)}m${s % 60 ? ` ${s % 60}s` : ""}`
                         : `${s}s`}
                     </span>
-                    <div className="h-1.5 w-px bg-zinc-600" />
+                    <div className="h-1.5 w-px bg-zinc-500" />
                   </div>
                 ))}
               </div>
 
-              {visibleTracks.map((track, index) => {
-                const rowH = trackRowHeight(track.type);
-                const meta = TRACK_META[track.type];
-                const isCaptions = track.type === "captions";
-                const isVideo = track.type === "video";
-                return (
-                  <div
-                    key={track.id}
-                    className="relative"
-                    style={{
-                      height: rowH,
-                      marginBottom: TIMELINE_TRACK_GAP,
-                      background:
-                        index % 2 === 0
-                          ? `linear-gradient(90deg, ${meta.accentSoft}, transparent 22%), rgba(255,255,255,0.012)`
-                          : `linear-gradient(90deg, ${meta.accentSoft}, transparent 14%)`,
-                      boxShadow:
-                        isCaptions || isVideo
-                          ? `inset 0 -1px 0 ${meta.accent}22`
-                          : undefined,
-                    }}
-                  >
-                    {(() => {
-                      const visibleCaptionCount =
-                        isCaptions
-                          ? track.items.filter((i) => i.type === "captions" && !i.hidden).length
-                          : track.items.length;
-                      const emptyLane = visibleCaptionCount === 0;
-                      return emptyLane ? (
-                      <button
-                        type="button"
-                        className="absolute inset-x-2 inset-y-1 z-10 flex items-center justify-center rounded-[10px] border border-dashed transition-colors hover:brightness-110"
-                        style={{
-                          borderColor: `${meta.accent}66`,
-                          backgroundColor: meta.accentSoft,
-                        }}
-                        title={`Add ${meta.short}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setRightPanelOpen(true);
-                          toast.message(`Add ${meta.short}`, {
-                            description: "Use Media, Text, or Audio tools — or drop a file on this lane.",
-                          });
-                        }}
-                      >
-                        <Plus className="size-4" style={{ color: meta.accent }} strokeWidth={2.25} />
-                      </button>
-                      ) : null;
-                    })()}
-                    {isCaptions
-                      ? (() => {
-                          const group = combineCaptionsForTimeline(track.items, durationMs);
-                          if (!group) return null;
-                          return (
-                            <CaptionGroupBlock
-                              key={group.id}
-                              group={group}
-                              zoom={zoom}
-                              trackHeight={rowH}
-                              selected={group.items.some((i) => i.id === selectedItemId)}
-                              onSelectMember={(itemId) => selectItemLinked(itemId)}
-                            />
-                          );
-                        })()
-                      : track.items.map((item) => {
-                          const inView =
-                            item.endMs >= viewRangeMs.startMs && item.startMs <= viewRangeMs.endMs;
-                          if (!inView) {
-                            // Keep layout width via an empty absolute spacer using clip geometry.
-                            const left = msToPx(item.startMs, zoom);
-                            const width = Math.max(2, msToPx(item.endMs - item.startMs, zoom));
-                            return (
-                              <div
-                                key={item.id}
-                                data-timeline-clip
-                                aria-hidden
-                                className="pointer-events-none absolute top-0 h-full opacity-0"
-                                style={{ left, width }}
-                              />
-                            );
-                          }
-                          const transition = showTransitions
-                            ? transitions.find((t) => t.afterItemId === item.id && t.enabled)
-                            : null;
-                          const isVideoTrack = track.type === "video";
-                          const sortedVideo = isVideoTrack
-                            ? [...track.items].sort((a, b) => a.startMs - b.startMs)
-                            : [];
-                          const videoIdx = sortedVideo.findIndex((i) => i.id === item.id);
-                          const nextClip =
-                            isVideoTrack && videoIdx >= 0 ? sortedVideo[videoIdx + 1] : undefined;
-                          const hasNext =
-                            Boolean(nextClip) &&
-                            clipsAbut(item.endMs, nextClip!.startMs);
-                          return (
-                            <div key={item.id} data-timeline-clip>
-                              <TimelineClipBlock
-                                item={item}
-                                zoom={zoom}
-                                trackHeight={rowH}
-                                selected={selectedItemId === item.id}
-                                transition={transition}
-                                showBoundary={Boolean(showTransitions && hasNext)}
-                                transitionSelected={Boolean(
-                                  transition && selectedTransitionId === transition.id,
-                                )}
-                                onSelect={() => {
-                                  selectItemLinked(item.id);
-                                }}
-                                onSeekToStart={() => {
-                                  userSeekRef.current = true;
-                                  setPlayhead(item.startMs);
-                                }}
-                                onOpenInspector={() => {
-                                  setRightPanelOpen(true);
-                                }}
-                                onSelectTransition={() => {
-                                  if (!hasNext) return;
-                                  if (transition) {
-                                    selectTransition(transition.id);
-                                    return;
-                                  }
-                                  const id = addTransition(item.id, "fade", 500);
-                                  if (id) selectTransition(id);
-                                }}
-                              />
-                            </div>
-                          );
-                        })}
-                  </div>
-                );
-              })}
+              {visibleTracks.map((track, index) => (
+                <TimelineTrackLane
+                  key={track.id}
+                  track={track}
+                  index={index}
+                  zoom={zoom}
+                  durationMs={durationMs}
+                  viewRangeMs={viewRangeMs}
+                  selectedItemId={selectedItemId}
+                  selectedTransitionId={selectedTransitionId}
+                  showTransitions={Boolean(showTransitions)}
+                  transitions={transitions}
+                  handlers={laneHandlers}
+                />
+              ))}
 
               <TimelineHoverGuide hoverMs={hoverMs} tracksAreaHeight={tracksAreaHeight} />
 

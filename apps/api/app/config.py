@@ -1,6 +1,6 @@
 import socket
 from pathlib import Path
-from typing import Self
+from typing import Literal, Self
 from urllib.parse import urlparse, urlunparse
 
 from pydantic import model_validator
@@ -43,6 +43,7 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    app_environment: Literal["development", "test", "production"] = "development"
     database_url: str = "postgresql+asyncpg://hanuman:hanuman@localhost:5432/hanuman"
     redis_url: str = "redis://localhost:6379/0"
     api_host: str = "0.0.0.0"
@@ -59,6 +60,10 @@ class Settings(BaseSettings):
     # URLs embed the host in the signature, so we must generate download URLs against
     # a host the browser can actually reach. Leave empty to use s3_endpoint as-is.
     s3_public_endpoint: str = ""
+    # Optional CDN origin for media GETs (CloudFront / Cloudflare → S3).
+    # When set, public_download_url returns `{MEDIA_CDN_BASE_URL}/{key}` instead of
+    # a presigned S3 URL. Requires CDN → bucket auth (OAC/OAI) — see ADR 0012.
+    media_cdn_base_url: str = ""
 
     temporal_host: str = "localhost:7233"
     temporal_namespace: str = "default"
@@ -66,23 +71,36 @@ class Settings(BaseSettings):
     temporal_task_queue_media: str = "media"
 
     hanuman_stub_mode: bool = True
+    production_agent_enabled: bool = False
     dev_user_external_id: str = "dev-local-user"
     internal_api_key: str = "dev-internal"
     api_base_url: str = "http://localhost:8000"
+    web_app_url: str = "http://localhost:3000"
+    billing_enabled: bool = False
+
+    # Supabase Auth only (no Supabase business DB). When set, Bearer JWT is required.
+    supabase_url: str = ""
+    supabase_anon_key: str = ""
+    supabase_jwt_secret: str = ""
 
     openrouter_api_key: str = ""
+    openrouter_image_api_key: str = ""
     openrouter_model: str = "openrouter/free"
+    editor_agent_fast_model: str = ""
+    editor_agent_smart_model: str = ""
+    editor_agent_vision_model: str = ""
     openrouter_base_url: str = "https://openrouter.ai/api/v1"
 
     pexels_api_key: str = ""
+    serpapi_api_key: str = ""
 
     sarvam_api_key: str = ""
     sarvam_tts_speaker: str = "shubh"
 
-    # Remotion Lambda render-service (ADR 0009 production path)
+    # Native cloud render service (ADR 0012)
     render_service_url: str = "http://localhost:8081"
     render_service_api_key: str = ""
-    render_engine: str = "remotion-lambda"
+    render_engine: str = "native"
 
     @model_validator(mode="after")
     def normalize_docker_service_hosts(self) -> Self:
@@ -103,3 +121,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+

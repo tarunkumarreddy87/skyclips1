@@ -36,7 +36,9 @@ function seedProfiles(): BrandProfile[] {
       disableAnimations: false,
       disableOverlays: false,
       disableEffects: false,
+      templateMode: "auto" as const,
       blocklistedTemplates: [] as string[],
+      allowedTemplates: [] as string[],
       blocklistedTransitions: [] as string[],
     },
     blacklistedWebpages: [] as string[],
@@ -115,12 +117,8 @@ export const useBrandProfileStore = create<BrandProfileState>()(
         if (err) throw new Error(err);
 
         let profiles = [...get().profiles];
-        // Cap at 10 — drop oldest when creating an 11th (VidRush docs).
-        while (profiles.length >= MAX_BRAND_PROFILES) {
-          profiles = profiles
-            .slice()
-            .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
-            .slice(1);
+        if (profiles.length >= MAX_BRAND_PROFILES) {
+          throw new Error(`You can keep up to ${MAX_BRAND_PROFILES} channel profiles. Remove one before creating another.`);
         }
 
         const profile = createEmptyProfile(name);
@@ -167,7 +165,7 @@ export const useBrandProfileStore = create<BrandProfileState>()(
     }),
     {
       name: "hanuman-brand-profiles",
-      version: 2,
+      version: 3,
       migrate: (persisted) => {
         const state = persisted as {
           profiles?: BrandProfile[];
@@ -175,7 +173,18 @@ export const useBrandProfileStore = create<BrandProfileState>()(
           favoriteVoiceIds?: string[];
         };
         const seeds = seedProfiles();
-        const existing = state.profiles ?? [];
+        const existing = (state.profiles ?? []).map((p) => ({
+          ...p,
+          compliance: {
+            ...p.compliance,
+            blocklist: {
+              ...p.compliance.blocklist,
+              templateMode: p.compliance.blocklist.templateMode ?? "auto",
+              allowedTemplates: p.compliance.blocklist.allowedTemplates ?? [],
+              blocklistedTemplates: p.compliance.blocklist.blocklistedTemplates ?? [],
+            },
+          },
+        }));
         const byId = new Map(existing.map((p) => [p.id, p]));
         for (const seed of seeds) {
           if (!byId.has(seed.id)) byId.set(seed.id, seed);

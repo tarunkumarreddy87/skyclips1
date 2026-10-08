@@ -1,6 +1,7 @@
 import localFont from "next/font/local";
 import { AppSidebar } from "@/components/app-sidebar";
 import { WorkspaceMain } from "@/components/workspace-main";
+import { MobileWorkspaceHeader } from "@/components/mobile-workspace-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 
@@ -27,6 +28,7 @@ export default function WorkspaceLayout({ children }: { children: React.ReactNod
     >
       <AppSidebar />
       <SidebarInset className="bg-background md:peer-data-[variant=inset]:m-0 md:peer-data-[variant=inset]:rounded-none md:peer-data-[variant=inset]:shadow-none">
+        <MobileWorkspaceHeader />
         <WorkspaceMain>{children}</WorkspaceMain>
       </SidebarInset>
     </SidebarProvider>

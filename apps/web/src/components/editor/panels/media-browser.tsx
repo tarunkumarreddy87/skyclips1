@@ -6,6 +6,7 @@ import { ImagePlus, Replace, Search, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/editor/store";
 import {
+  deriveMediaProxies,
   requestMediaUploadUrl,
   searchStockPhotos,
   uploadFileToPresignedUrl,
@@ -17,6 +18,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import type { Asset } from "@/lib/editor/types";
 import { resolveMediaUrl } from "@/lib/editor/media-url";
+import { probeUploadDuration } from "@/lib/editor/probe-upload";
 
 interface MediaBrowserProps {
   mode?: "browse" | "replace";
@@ -110,39 +112,100 @@ export function MediaBrowser({ mode = "browse", itemId }: MediaBrowserProps) {
     if (mode === "replace" && targetItemId) {
       addAssetFromUrl(url, targetItemId);
     } else {
-      addBroll({ url, label: "Image", durationMs: 4000 });
+      addBroll({ url, label: "Media", durationMs: 4000 });
     }
     setUrlInput("");
   };
 
   const handleLocalFile = async (file: File | undefined) => {
-    if (!file || !file.type.startsWith("image/")) return;
+    if (!file) return;
+    const isImage = file.type.startsWith("image/");
+    const isVideo = file.type.startsWith("video/");
+    if (!isImage && !isVideo) {
+      toast.error("Upload an image or video file");
+      return;
+    }
     if (!projectId) {
       toast.error("Project not loaded");
       return;
     }
     setUploading(true);
     try {
+      const durationMs = await probeUploadDuration(file);
+      const mediaType = file.type.startsWith("video/") ? "video" as const : "image" as const;
       const { uploadUrl, s3Key, downloadUrl } = await requestMediaUploadUrl(
         projectId,
         file.name,
-        file.type || "image/jpeg",
+        file.type || (isVideo ? "video/mp4" : "image/jpeg"),
       );
       await uploadFileToPresignedUrl(uploadUrl, file);
       const previewUrl = downloadUrl || uploadUrl;
-      const label = file.name.replace(/\.[^.]+$/, "") || "Image";
+      const label = file.name.replace(/\.[^.]+$/, "") || (isVideo ? "Video" : "Image");
+
+      let proxyMeta: Record<string, string> | undefined;
+      if (isVideo) {
+        try {
+          const derived = await deriveMediaProxies(projectId, s3Key);
+          proxyMeta = {
+            proxyKey: derived.proxyKey,
+            posterKey: derived.posterKey,
+            proxyUrl: derived.proxyUrl,
+            posterUrl: derived.posterUrl,
+          };
+          if (derived.spriteKey) proxyMeta.spriteKey = derived.spriteKey;
+          if (derived.spriteUrl) proxyMeta.spriteUrl = derived.spriteUrl;
+        } catch (err) {
+          console.warn("[media-browser] proxy derive failed; scheduling backfill", err);
+          toast.message("Uploaded — preview proxy will generate shortly");
+        }
+      }
+
+      let createdAssetId: string | null = null;
       if (mode === "replace" && targetItemId) {
-        addAssetFromUrl(previewUrl, targetItemId, { sourceKey: s3Key, label });
+        addAssetFromUrl(previewUrl, targetItemId, {
+          sourceKey: s3Key,
+          label,
+          proxyMeta,
+        });
+        const match = useEditorStore
+          .getState()
+          .assets.find((a) => a.metadata?.sourceKey === s3Key);
+        createdAssetId = match?.id ?? null;
       } else {
         addBroll({
           url: previewUrl,
           label,
-          durationMs: 4000,
+          durationMs: isVideo ? 8000 : 4000,
           sourceKey: s3Key,
           sourceType: "local",
+          mediaType: isVideo ? "video" : "image",
+          thumbnailUrl: proxyMeta?.posterUrl,
+          metadata: proxyMeta,
         });
+        const match = useEditorStore
+          .getState()
+          .assets.find((a) => a.metadata?.sourceKey === s3Key);
+        createdAssetId = match?.id ?? null;
       }
-      toast.success("Image uploaded");
+
+      // If derive failed (or raced), backfill once in background.
+      if (isVideo && !proxyMeta && createdAssetId) {
+        const assetId = createdAssetId;
+        void deriveMediaProxies(projectId, s3Key)
+          .then((derived) => {
+            useEditorStore.getState().patchAssetProxyMeta(assetId, {
+              proxyKey: derived.proxyKey,
+              posterKey: derived.posterKey,
+              spriteKey: derived.spriteKey ?? undefined,
+              proxyUrl: derived.proxyUrl,
+              posterUrl: derived.posterUrl,
+              spriteUrl: derived.spriteUrl ?? undefined,
+            });
+          })
+          .catch((e) => console.warn("[media-browser] proxy backfill failed", e));
+      }
+
+      toast.success(isVideo ? "Video uploaded" : "Image uploaded");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Upload failed");
     } finally {
@@ -161,7 +224,8 @@ export function MediaBrowser({ mode = "browse", itemId }: MediaBrowserProps) {
       replaceMedia(targetItemId, asset.id);
       return;
     }
-    addBroll({ url: asset.url, label: asset.label, durationMs: 4000, sourceType: asset.sourceType });
+    if (asset.mediaType === "audio") return;
+    addBroll({ url: asset.url, label: asset.label, durationMs: asset.durationMs ?? 4000, mediaType: asset.mediaType, sourceType: asset.sourceType, sourceKey: asset.metadata?.sourceKey });
   };
 
   return (
@@ -192,19 +256,19 @@ export function MediaBrowser({ mode = "browse", itemId }: MediaBrowserProps) {
           <Input
             value={urlInput}
             onChange={(e) => setUrlInput(e.target.value)}
-            placeholder="Paste image URL…"
+            placeholder="Paste image or video URL…"
             className="h-8 border-white/10 bg-white/5 text-xs"
             onKeyDown={(e) => e.key === "Enter" && handleUrlSubmit()}
           />
           <Button size="sm" className="h-7 w-full text-xs" disabled={!urlInput.trim()} onClick={handleUrlSubmit}>
-            {mode === "replace" ? "Use URL" : "Add image"}
+            {mode === "replace" ? "Use URL" : "Add media"}
           </Button>
         </TabsContent>
         <TabsContent value="local" className="mt-2 space-y-2">
           <input
             ref={fileRef}
             type="file"
-            accept="image/*"
+            accept="image/*,video/mp4,video/webm,video/quicktime"
             className="hidden"
             onChange={(e) => {
               void handleLocalFile(e.target.files?.[0]);
@@ -220,9 +284,11 @@ export function MediaBrowser({ mode = "browse", itemId }: MediaBrowserProps) {
             )}
           >
             <Upload className="size-5" />
-            {uploading ? "Uploading to cloud…" : "Upload image"}
+            {uploading ? "Uploading to cloud…" : "Upload image or video"}
           </button>
-          <p className="text-[10px] text-zinc-500">Saved to project storage so renders stay durable.</p>
+          <p className="text-[10px] text-zinc-500">
+            Videos get a 540p proxy + poster for editor preview; export still uses the original.
+          </p>
         </TabsContent>
       </Tabs>
 
@@ -247,19 +313,19 @@ export function MediaBrowser({ mode = "browse", itemId }: MediaBrowserProps) {
             <div className="relative aspect-video bg-zinc-800">
               {(() => {
                 const thumb =
+                  resolveMediaUrl(asset.metadata?.posterUrl || "") ||
                   resolveMediaUrl(asset.thumbnailUrl || "") ||
                   (asset.mediaType === "image" ? resolveMediaUrl(asset.url) : "") ||
                   "";
-                if (!thumb) return null;
-                if (asset.mediaType === "video" || /\.(mp4|webm|mov)(\?|#|$)/i.test(thumb)) {
+                if (!thumb) {
                   return (
-                    <video
-                      src={thumb}
-                      muted
-                      playsInline
-                      preload="metadata"
-                      className="absolute inset-0 size-full object-cover"
-                    />
+                    <div className="absolute inset-0 bg-zinc-800" aria-hidden />
+                  );
+                }
+                // Never use MP4 as browser thumb grid source.
+                if (/\.(mp4|webm|mov)(\?|#|$)/i.test(thumb)) {
+                  return (
+                    <div className="absolute inset-0 bg-zinc-800" aria-hidden />
                   );
                 }
                 return (

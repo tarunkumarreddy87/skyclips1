@@ -14,9 +14,12 @@ import {
   subscribeProgress,
 } from "@/lib/api-client";
 import { fetchSavedTimelineManifest } from "@/lib/editor/fetch-saved-timeline-manifest";
+import { OpenEditorButton } from "@/components/editor/open-editor-button";
 import { brandComplianceForGenerate, useBrandProfileStore } from "@/lib/brand-profiles";
+import { refreshSubscriptionFromServer } from "@/lib/billing/subscription";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { renderStagePercent } from "@/lib/render-progress";
 
 type StageDef = {
   key: string;
@@ -92,6 +95,7 @@ function stagesForPath(entryPath?: EntryPath): StageDef[] {
 
 function resolveStageKey(stage: string, stages: StageDef[]): string {
   const mapped = STAGE_ALIASES[stage] ?? stage;
+  if (mapped === RENDER_STAGE.key) return mapped;
   if (stages.some((s) => s.key === mapped)) return mapped;
   // Unknown / skipped stage (e.g. parse_script on prompt-first) — fall back carefully
   if (mapped === "parse_script") return "generate_script";
@@ -104,6 +108,7 @@ function resolveStageKey(stage: string, stages: StageDef[]): string {
 
 function stageIndex(stage: string, stages: StageDef[]): number {
   const key = resolveStageKey(stage, stages);
+  if (key === RENDER_STAGE.key) return stages.length;
   const idx = stages.findIndex((s) => s.key === key);
   return idx >= 0 ? idx : 0;
 }
@@ -144,18 +149,24 @@ function humanizeGenerationError(raw: string | null | undefined, stage?: string)
     lower.includes("concurrentinvocationlimitexceeded") ||
     (lower.includes("render-service") && lower.includes("rate"))
   ) {
-    return "Render hit the AWS Lambda concurrency limit (this account allows ~10 parallel Lambdas). Retry export — chunking is tuned for that cap. For faster long renders, request a Lambda concurrency increase in AWS Service Quotas.";
+    return "Render hit the AWS Lambda concurrency limit (~10 parallel Lambdas on this account). Retry export — we now use fewer, larger chunks to stay under the cap. For faster long renders, request a Lambda concurrency increase in AWS Service Quotas.";
   }
   if (lower.includes("heartbeat")) {
     return "Rendering stalled (heartbeat timeout). Retry render — encoding keeps the job alive now. Your timeline is kept.";
   }
-  if (lower.includes("402") || lower.includes("insufficient") || lower.includes("quota") || lower.includes("credit")) {
+  if (lower.includes("sarvam")) {
     return "Voice synthesis is out of credits. Top up Sarvam (or update SARVAM_API_KEY), then retry.";
+  }
+  if (lower.includes("openrouter")) {
+    return "Script generation reached the AI provider credit limit. The editor will retry with a smaller response budget when credits are available.";
+  }
+  if (lower.includes("402") || lower.includes("insufficient") || lower.includes("quota") || lower.includes("credit")) {
+    return "Generation reached a provider credit limit. Check the active AI or voice provider, then retry.";
   }
   if (lower.includes("429") || lower.includes("rate limit")) {
     return "The voice service is rate-limiting requests. Wait a moment and retry.";
   }
-  if (lower.includes("openrouter") || lower.includes("llm") || lower.includes("model")) {
+  if (lower.includes("llm") || lower.includes("model")) {
     return `Script generation hit a model error: ${text}`;
   }
 
@@ -182,11 +193,9 @@ export function GenerationPanel({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [hydrated, setHydrated] = useState(false);
-  const runIdRef = useRef<string | null>(null);
   const percentHighWaterRef = useRef(0);
   const trackedRunIdRef = useRef<string | null>(null);
 
-  runIdRef.current = run?.id ?? null;
   if (run?.id !== trackedRunIdRef.current) {
     trackedRunIdRef.current = run?.id ?? null;
     percentHighWaterRef.current = 0;
@@ -200,10 +209,11 @@ export function GenerationPanel({
   );
   const latestEvent = runEvents[runEvents.length - 1];
   const isRunning = run?.status === "running" || run?.status === "queued";
+  const activeRunId = isRunning ? run?.id ?? null : null;
   const runCompleted = run?.status === "completed";
   const isFailed = run?.status === "failed" || projectStatus === "failed";
   const videoReady =
-    Boolean(video) || (runCompleted && run?.currentStage === "enqueue_render");
+    runCompleted && (video?.runId === run.id || run.currentStage === "enqueue_render");
   // Timeline pipeline finished (MP4 still optional via editor “Render video”).
   const timelineReady = runCompleted && !isFailed && !videoReady;
   const isFullyDone = videoReady;
@@ -212,6 +222,8 @@ export function GenerationPanel({
     (isFailed ? failedEvent?.stage ?? run?.currentStage : latestEvent?.stage ?? run?.currentStage) ??
     "";
   const currentStage = resolveStageKey(currentStageRaw, stages);
+  const isRendering = isRunning && currentStage === RENDER_STAGE.key;
+  const renderFailed = isFailed && currentStage === RENDER_STAGE.key;
   const reachedIdx = isFailed
     ? stageIndex(currentStage, stages)
     : timelineReady || videoReady
@@ -240,7 +252,7 @@ export function GenerationPanel({
         ? 100
         : isFailed
           ? stagePercent || Math.round(((reachedIdx + 0.5) / stages.length) * 100)
-          : isRunning
+            : isRunning && Boolean(currentStageRaw)
             ? stagePercent || Math.round(((reachedIdx + 0.35) / stages.length) * 100)
             : 0);
 
@@ -260,14 +272,14 @@ export function GenerationPanel({
       : timelineReady
         ? "Timeline ready"
         : isRunning
-          ? "In production"
+          ? isRendering ? "Rendering MP4" : !currentStageRaw ? "Waiting for worker" : "In production"
             : run
               ? "Queued"
               : "Ready";
 
-  const refreshVideo = useCallback(async () => {
+  const refreshVideo = useCallback(async (runId: string) => {
     try {
-      const artifact = await downloadVideo(projectId);
+      const artifact = await downloadVideo(projectId, undefined, runId);
       setVideo(artifact);
     } catch {
       setVideo(null);
@@ -295,6 +307,7 @@ export function GenerationPanel({
         brandCompliance: brandComplianceForGenerate(brand),
       });
       setRun(result.run);
+      void refreshSubscriptionFromServer();
       setEvents([]);
       setVideo(null);
     } catch (e) {
@@ -349,6 +362,7 @@ export function GenerationPanel({
         result = await startGeneration(projectId, compliance);
       }
       setRun(result.run);
+      void refreshSubscriptionFromServer();
       setEvents([]);
       setVideo(null);
       if (renderOnly) {
@@ -390,7 +404,7 @@ export function GenerationPanel({
         if (cancelled) return;
         setRun(latest);
         if (latest) await loadEvents(latest.id);
-        if (latest?.status === "completed") await refreshVideo();
+        if (latest?.status === "completed") await refreshVideo(latest.id);
       } catch {
         /* no run yet */
       } finally {
@@ -411,54 +425,59 @@ export function GenerationPanel({
   }, [hydrated, autoStart, projectStatus, run, loading, handleStart]);
 
   useEffect(() => {
-    if (!run || run.status === "completed" || run.status === "failed") return;
+    if (!activeRunId) return;
 
-    const refreshRun = () => {
-      void getLatestRun(projectId).then((latest) => {
-        if (!latest) return;
+    let cancelled = false;
+    let refreshInFlight = false;
+    const refreshRun = async () => {
+      if (cancelled || refreshInFlight) return;
+      refreshInFlight = true;
+      try {
+        const latest = await getLatestRun(projectId);
+        if (cancelled || !latest) return;
         setRun(latest);
-        // Always reload events too — SSE can drop or be buffered by proxies, so the
-        // 2.5s poll is the reliable fallback for live stage updates.
-        void loadEvents(latest.id);
-        if (latest.status === "completed" || latest.status === "failed") {
-          void loadEvents(latest.id);
-        }
-      });
+        // Polling is the reliable fallback when proxy buffering drops live events.
+        await loadEvents(latest.id);
+      } catch {
+        /* retry on the next event/poll */
+      } finally {
+        refreshInFlight = false;
+      }
     };
 
     const unsubscribe = subscribeProgress(projectId, (event) => {
-      const activeRunId = runIdRef.current;
-      if (activeRunId && event.runId !== activeRunId) return;
+      if (event.runId !== activeRunId) return;
       setEvents((prev) =>
         prev.some((e) => e.id === event.id) ? prev : mergeProgressEvents(prev, [event]),
       );
       if (event.status === "failed") {
         setError(event.message);
-        refreshRun();
+        void refreshRun();
       }
       // Any completed stage can flip run → completed (especially build_timeline).
       if (event.status === "completed") {
-        refreshRun();
+        void refreshRun();
       }
     });
 
-    const poll = setInterval(refreshRun, 2500);
+    const poll = setInterval(() => void refreshRun(), 2500);
 
     return () => {
+      cancelled = true;
       unsubscribe();
       clearInterval(poll);
     };
-  }, [projectId, run, loadEvents]);
+  }, [projectId, activeRunId, loadEvents]);
 
   // Only auto-navigate when the final MP4 is ready. Timeline-ready stays on queue
   // so the user can see stages + open the editor deliberately.
   useEffect(() => {
     if (run?.status !== "completed") return;
-    void refreshVideo();
+    void refreshVideo(run.id);
     if (run.currentStage === "enqueue_render") {
       router.replace(`/projects/${projectId}/video`);
     }
-  }, [run?.status, run?.currentStage, refreshVideo, router, projectId]);
+  }, [run?.id, run?.status, run?.currentStage, refreshVideo, router, projectId]);
 
   useEffect(() => {
     if (run?.status === "failed" && run.errorMessage) {
@@ -475,22 +494,22 @@ export function GenerationPanel({
     !isFailed && latestEvent?.message && latestEvent.status !== "failed" ? latestEvent.message : null;
 
   return (
-    <section className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-[#222] shadow-[0_24px_80px_-40px_rgba(0,0,0,0.65)]">
+    <section className="generation-panel relative overflow-hidden rounded-[1.5rem] border border-border bg-card text-card-foreground shadow-[0_24px_72px_-48px_rgba(0,0,0,0.36)]">
       <div
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_12%_0%,rgba(56,189,248,0.1),transparent_45%),radial-gradient(ellipse_at_90%_8%,rgba(251,191,36,0.08),transparent_40%)]"
+        className="queue-panel-ambient pointer-events-none absolute inset-0"
         aria-hidden
       />
 
       <div className="relative flex flex-col gap-6 p-6 sm:p-8">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-zinc-500">
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
               Production pipeline
             </p>
-            <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight text-white">
+            <h2 className="mt-1 font-display text-2xl font-semibold tracking-tight text-card-foreground">
               Video generation
             </h2>
-            <p className="mt-1 text-sm text-zinc-400">
+            <p className="mt-1 text-sm text-muted-foreground">
               {entryPath === "script_first" ? "Script-first path" : "Prompt-first path"} ·{" "}
               {stages.length} stages
             </p>
@@ -499,20 +518,20 @@ export function GenerationPanel({
           <div className="flex items-center gap-3">
             <span
               className={cn(
-                "inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ring-1",
-                isFailed && "bg-red-500/10 text-red-300 ring-red-500/25",
+                "inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium",
+                isFailed && "queue-tone-danger",
                 isFullyDone &&
                   !isFailed &&
-                  "bg-emerald-500/10 text-emerald-300 ring-emerald-500/25",
+                  "queue-tone-success",
                 timelineReady &&
                   !isFailed &&
-                  "bg-amber-500/10 text-amber-200 ring-amber-500/25",
-                isRunning && "bg-sky-500/10 text-sky-300 ring-sky-500/25",
+                  "queue-tone-warning",
+                isRunning && "queue-tone-info",
                 !isFailed &&
                   !timelineReady &&
                   !isFullyDone &&
                   !isRunning &&
-                  "bg-white/5 text-zinc-400 ring-white/10",
+                  "border-border bg-muted text-muted-foreground",
               )}
             >
               {isRunning ? <Loader2 className="size-3 animate-spin" /> : null}
@@ -522,15 +541,15 @@ export function GenerationPanel({
               {statusLabel}
             </span>
             <div className="text-right">
-              <p className="font-display text-3xl font-semibold tabular-nums tracking-tight text-white">
+              <p className="font-display text-3xl font-semibold tabular-nums tracking-tight text-card-foreground">
                 {percent}
-                <span className="text-lg text-zinc-500">%</span>
+                <span className="text-lg text-muted-foreground">%</span>
               </p>
             </div>
           </div>
         </div>
 
-        <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
+        <div className="h-1.5 overflow-hidden rounded-full bg-muted">
           <div
             className={cn(
               "h-full rounded-full transition-[width] duration-500 ease-out",
@@ -547,7 +566,7 @@ export function GenerationPanel({
             type="button"
             onClick={() => void (projectStatus === "failed" ? handleRetry() : handleStart())}
             disabled={loading}
-            className="w-full bg-white text-[#111] hover:bg-zinc-200 sm:w-auto"
+            className="w-full sm:w-auto"
           >
             {loading ? (
               <>
@@ -566,14 +585,13 @@ export function GenerationPanel({
           <ol className="flex flex-col gap-0">
             {stages.map((stage, i) => {
               const done =
-                !isFailed &&
                 (timelineReady || videoReady
                   ? true
                   : i < reachedIdx ||
                     (i === reachedIdx &&
                       latestEvent?.status === "completed" &&
                       resolveStageKey(latestEvent.stage, stages) === stage.key));
-              const active = i === reachedIdx && isRunning;
+              const active = i === reachedIdx && isRunning && Boolean(currentStageRaw);
               const failed = isFailed && i === reachedIdx;
 
               return (
@@ -582,7 +600,7 @@ export function GenerationPanel({
                     <span
                       className={cn(
                         "absolute left-[15px] top-8 h-[calc(100%-1.25rem)] w-px",
-                        done && !failed ? "bg-emerald-500/50" : "bg-white/10",
+                        done && !failed ? "queue-line-success" : "bg-border",
                       )}
                       aria-hidden
                     />
@@ -590,16 +608,16 @@ export function GenerationPanel({
 
                   <span
                     className={cn(
-                      "relative z-10 mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full ring-1 transition-colors",
-                      failed && "bg-red-500/15 text-red-300 ring-red-500/40",
+                      "relative z-10 mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border transition-colors",
+                      failed && "queue-tone-danger",
                       done &&
                         !failed &&
-                        "bg-emerald-500/15 text-emerald-300 ring-emerald-500/35",
-                      active && "bg-sky-500/15 text-sky-300 ring-sky-500/40",
+                        "queue-tone-success",
+                      active && "queue-tone-info",
                       !done &&
                         !active &&
                         !failed &&
-                        "bg-white/[0.04] text-zinc-500 ring-white/10",
+                        "border-border bg-muted text-muted-foreground",
                     )}
                   >
                     {failed ? (
@@ -618,18 +636,18 @@ export function GenerationPanel({
                       <p
                         className={cn(
                           "font-medium tracking-tight",
-                          failed && "text-red-300",
-                          (done || active) && !failed && "text-white",
-                          !done && !active && !failed && "text-zinc-500",
+                          failed && "queue-text-danger",
+                          (done || active) && !failed && "text-card-foreground",
+                          !done && !active && !failed && "text-muted-foreground",
                         )}
                       >
                         {stage.label}
                       </p>
-                      <span className="shrink-0 text-[11px] uppercase tracking-wider text-zinc-500">
+                      <span className="shrink-0 text-[11px] uppercase tracking-wider text-muted-foreground">
                         {failed ? "Failed" : done ? "Done" : active ? "Running" : "Waiting"}
                       </span>
                     </div>
-                    <p className="mt-0.5 text-sm text-zinc-500">{stage.detail}</p>
+                    <p className="mt-0.5 text-sm text-muted-foreground">{stage.detail}</p>
                   </div>
                 </li>
               );
@@ -638,15 +656,19 @@ export function GenerationPanel({
             <li className="relative flex gap-4 pt-1">
               <span
                 className={cn(
-                  "relative z-10 mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full ring-1",
+                  "relative z-10 mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full border",
                   videoReady
-                    ? "bg-emerald-500/15 text-emerald-300 ring-emerald-500/35"
-                    : "bg-white/[0.04] text-zinc-500 ring-white/10",
+                    ? "queue-tone-success"
+                    : "border-border bg-muted text-muted-foreground",
                 )}
               >
-                {videoReady ? (
-                  <Check className="size-4" strokeWidth={2.5} />
-                ) : (
+                  {videoReady ? (
+                    <Check className="size-4" strokeWidth={2.5} />
+                  ) : renderFailed ? (
+                    <AlertCircle className="size-4" />
+                  ) : isRendering ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
                   <Circle className="size-3.5 opacity-50" />
                 )}
               </span>
@@ -655,38 +677,32 @@ export function GenerationPanel({
                   <p
                     className={cn(
                       "font-medium tracking-tight",
-                      videoReady ? "text-white" : "text-zinc-500",
+                      videoReady ? "text-card-foreground" : "text-muted-foreground",
                     )}
                   >
                     {RENDER_STAGE.label}
                   </p>
-                  <span className="shrink-0 text-[11px] uppercase tracking-wider text-zinc-500">
-                    {videoReady ? "Done" : "In editor"}
+                  <span className="shrink-0 text-[11px] uppercase tracking-wider text-muted-foreground">
+                    {videoReady ? "Done" : renderFailed ? "Failed" : isRendering ? `Rendering · ${renderStagePercent(latestEvent?.percent ?? percent)}%` : "In editor"}
                   </span>
                 </div>
-                <p className="mt-0.5 text-sm text-zinc-500">{RENDER_STAGE.detail}</p>
+                <p className="mt-0.5 text-sm text-muted-foreground">{isRendering ? latestEvent?.message || "Encoding your timeline. Progress updates from the render worker." : RENDER_STAGE.detail}</p>
               </div>
             </li>
           </ol>
         )}
 
         {timelineReady && !videoReady ? (
-          <div className="flex flex-col gap-3 rounded-xl border border-emerald-500/25 bg-emerald-500/5 px-4 py-4">
-            <p className="text-sm font-medium text-emerald-200">
+          <div className="queue-callout-success flex flex-col gap-3 rounded-xl border px-4 py-4">
+            <p className="queue-text-success text-sm font-medium">
               Timeline is ready — open the editor to preview, then click Render video for the MP4.
             </p>
-            <Button
-              type="button"
-              className="w-fit bg-white text-[#111] hover:bg-zinc-200"
-              onClick={() => router.push(`/projects/${projectId}/editor`)}
-            >
-              Open editor
-            </Button>
+            <OpenEditorButton projectId={projectId} />
           </div>
         ) : null}
 
-        {liveMessage ? (
-          <p className="rounded-xl border border-white/[0.06] bg-white/[0.04] px-4 py-3 text-sm text-zinc-300">
+        {liveMessage && !timelineReady ? (
+          <p className="rounded-xl border border-border bg-muted/60 px-4 py-3 text-sm text-foreground">
             {liveMessage}
           </p>
         ) : null}
@@ -694,7 +710,7 @@ export function GenerationPanel({
         {isFullyDone && video ? (
           <Button
             variant="outline"
-            className="border-white/10 bg-transparent text-white hover:bg-white/5"
+            className="border-border bg-transparent text-foreground hover:bg-accent"
             render={<a href={video.downloadUrl} download />}
           >
             <Download className="size-4" />
@@ -703,14 +719,14 @@ export function GenerationPanel({
         ) : null}
 
         {isFailed ? (
-          <div className="flex flex-col gap-3 rounded-xl border border-red-500/25 bg-red-500/5 px-4 py-4">
+          <div className="queue-callout-danger flex flex-col gap-3 rounded-xl border px-4 py-4">
             <div className="flex gap-3">
-              <AlertCircle className="mt-0.5 size-4 shrink-0 text-red-400" />
+              <AlertCircle className="queue-text-danger mt-0.5 size-4 shrink-0" />
               <div className="min-w-0 flex flex-col gap-1">
-                <p className="text-sm font-medium text-red-300">
-                  {stages.find((s) => s.key === currentStage)?.label ?? "Generation"} failed
+                <p className="queue-text-danger text-sm font-medium">
+                    {renderFailed ? RENDER_STAGE.label : stages.find((s) => s.key === currentStage)?.label ?? "Generation"} failed
                 </p>
-                <p className="text-sm text-zinc-400">{displayError}</p>
+                <p className="text-sm text-muted-foreground">{displayError}</p>
               </div>
             </div>
             <Button
@@ -718,7 +734,7 @@ export function GenerationPanel({
               onClick={() => void handleRetry()}
               disabled={loading}
               size="sm"
-              className="w-fit bg-white text-[#111] hover:bg-zinc-200"
+              className="w-fit"
             >
               {loading ? (
                 <>
@@ -737,7 +753,7 @@ export function GenerationPanel({
         ) : null}
 
         {error && !isFailed ? (
-          <p className="text-sm text-red-400">{humanizeGenerationError(error)}</p>
+          <p className="queue-text-danger text-sm">{humanizeGenerationError(error)}</p>
         ) : null}
       </div>
     </section>

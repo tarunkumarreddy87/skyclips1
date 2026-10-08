@@ -1,46 +1,46 @@
-# Render Service — Remotion Lambda only (ADR 0009)
+# HANUMAN native render service
 
-Dedicated Node.js service for AWS Remotion Lambda cloud rendering. No local Chromium rendering.
+The job service runs our shared SVG graphics runtime and native FFmpeg media
+pipeline on a container worker. The browser editor keeps its layout. A render
+uses TypeScript/Resvg for captions, typography, frames, charts and vector objects;
+Python/FFmpeg handles footage, audio, transitions, encoding and artifact upload.
 
-## Endpoints
+## Run
 
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/render/start` | Queue Lambda render |
-| GET | `/render/:id/status` | Poll progress |
-| GET | `/render/:id/result` | Final artifact URL |
-| DELETE | `/render/:id` | Cancel render |
-| GET | `/health` | Health check |
+Install workspace Node dependencies with `pnpm install`. Install the media worker
+and its shared Python package into a Python 3.12 environment. Configure artifact
+storage, then run `pnpm --filter @hanuman/render-service dev`. Docker images include
+both runtimes and bundled fonts. There is no browser capture or Lambda deployment.
 
-## Quick start
+| Method | Path | Behavior |
+|---|---|---|
+| POST | `/render/start` | Queue manifest and output artifact key; supports external idempotency key |
+| GET | `/render/:id/status` | Progress, native engine and encoder metadata |
+| GET | `/render/:id/result` | Output artifact and measured duration |
+| DELETE | `/render/:id` | Cancel queued job or terminate worker process tree |
+| GET | `/health` | Service liveness and active job count |
 
-```bash
-# 1. Deploy AWS infrastructure (once)
-cd infrastructure/remotion-lambda
-./deploy.sh
+## Configuration
 
-# 2. Configure .env (see .env.example at repo root)
+- `S3_BUCKET_NAME`, `S3_ENDPOINT`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, `S3_REGION` configure artifacts. Without an endpoint or static keys, AWS uses the task IAM role.
+- `RENDER_PYTHON_EXECUTABLE` optionally selects Python; repository `.venv` is detected locally.
+- `RENDER_ENCODER=auto` probes an actual NVIDIA encode; unavailable GPU hardware falls back to `libx264`.
+- `RENDER_PARALLEL_SECTIONS=2` bounds section workers; `RENDER_MAX_CONCURRENT=1` bounds jobs.
+- `RENDER_JOB_MAX_RETRIES=1`, `RENDER_JOB_TIMEOUT_MS=7200000` bound retry and runtime.
+- `RENDER_SERVICE_API_KEY` protects render endpoints; health probes remain available.
+- `REDIS_URL` enables durable jobs; `RENDER_GLOBAL_MAX_CONCURRENT` limits jobs across replicas.
+- `S3_PUBLIC_ENDPOINT` sets browser-accessible result URLs for local object storage.
+- `RENDER_CACHE_DIR` enables content-addressed completed-section caching on mounted storage.
 
-# 3. Start service
-pnpm --filter @hanuman/render-service dev
-```
+## Current limits
 
-## Environment
+Configured Redis persists jobs with leases, shared capacity and owner-fenced updates.
+Restart recovery renders from persisted manifests; graceful shutdown stops process trees.
+Memory mode is for development without Redis. Completed artifacts persist in storage. Section caches require mounted storage and have no
+automatic eviction yet. Graphics rasterization is CPU based, and composition fuses media, transitions and graphics into one FFmpeg encode per section; this is not a zero-copy GPU pipeline. A GPU container
+requires a compatible FFmpeg build, NVIDIA driver/runtime and device access.
+Quality and speed targets need representative long-video cloud benchmarks.
 
-See repo `.env.example` — render service reads:
-
-- `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`
-- `REMOTION_FUNCTION_NAME`, `REMOTION_SERVE_URL`
-- `S3_BUCKET_NAME` (+ MinIO `S3_ENDPOINT` for local artifact storage)
-
-## Architecture
-
-```
-Temporal media worker
-  → POST render-service /render/start
-  → poll GET /render/:id/status
-  → GET /render/:id/result
-  → register artifact via API /internal/artifacts
-```
-
-All rendering uses `@remotion/lambda` with parallel chunk Lambdas tuned via `REMOTION_FRAMES_PER_LAMBDA`.
+`pnpm --filter @hanuman/render-service typecheck` and
+`pnpm --filter @hanuman/render-service test` validate service contracts. Real local
+media/graphics export tests are in `workers/media/tests/test_native_export.py`.

@@ -3,6 +3,8 @@
  * Google families load in the editor shell; custom uploads register via FontFace.
  */
 
+import { ensureEngineFontsLoaded } from "./engine-fonts";
+
 export type EditorTextFont = {
   id: string;
   label: string;
@@ -179,22 +181,9 @@ export const EDITOR_TEXT_FONTS: EditorTextFont[] = [
   },
 ];
 
-const GOOGLE_LINK_ID = "hanuman-editor-text-fonts";
-
-/** Inject a single Google Fonts stylesheet for all curated families. */
+/** Load the same bundled static fonts used by cloud export. */
 export function ensureEditorTextFontsLoaded(): void {
-  if (typeof document === "undefined") return;
-  if (document.getElementById(GOOGLE_LINK_ID)) return;
-  const families = EDITOR_TEXT_FONTS.map((f) => f.google).filter(Boolean) as string[];
-  if (!families.length) return;
-  const href = `https://fonts.googleapis.com/css2?${families
-    .map((f) => `family=${f}`)
-    .join("&")}&display=swap`;
-  const link = document.createElement("link");
-  link.id = GOOGLE_LINK_ID;
-  link.rel = "stylesheet";
-  link.href = href;
-  document.head.appendChild(link);
+  ensureEngineFontsLoaded();
 }
 
 export function resolveTextFontFamily(fontFamily?: string | null): string {

@@ -1,6 +1,6 @@
 /**
  * Phase 2: export duration estimate accounts for transition overlaps.
- * Run: cd packages/remotion-renderer && pnpm exec tsx ../../apps/web/src/lib/editor/export-duration.roundtrip.ts
+ * Run: cd packages/video-engine && pnpm exec tsx ../../apps/web/src/lib/editor/export-duration.roundtrip.ts
  */
 import assert from "node:assert/strict";
 import { estimateExportDurationMs } from "./export-duration";
@@ -84,7 +84,7 @@ function baseTimeline(overrides: Partial<Timeline> = {}): Timeline {
 
 function main() {
   const withOverlap = baseTimeline();
-  assert.equal(estimateExportDurationMs(withOverlap), 9500, "5s+5s-0.5s transition");
+  assert.equal(estimateExportDurationMs(withOverlap), 10000, "transition preserves authoring duration");
 
   const hardCuts = baseTimeline({
     settings: { ...withOverlap.settings, showTransitions: false },
@@ -130,7 +130,7 @@ function main() {
     history: [],
   };
   const man = buildTimelineManifestV1FromEditorState(state.project.id, state);
-  assert.ok(Math.abs(man.metadata.duration_sec - 9.5) < 0.001, "manifest uses export estimate");
+  assert.ok(Math.abs(man.metadata.duration_sec - 10) < 0.001, "manifest uses export estimate");
 
   console.log("export-duration.roundtrip: PASS");
 }

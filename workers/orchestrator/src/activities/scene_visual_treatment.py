@@ -32,6 +32,15 @@ TRANSITION_STYLES = (
 )
 TEXT_STYLES = ("none", "chapter_title", "lower_third", "freeform_text")
 MOODS = ("hook", "tension", "reveal", "calm", "climax", "outro", "list_item")
+MOTION_GRAPHICS = (
+    "none",
+    "vertical-bar-chart",
+    "line-chart",
+    "before-after-split",
+    "news-highlight",
+    "doc-callout",
+    "highlight-quote",
+)
 
 _HOOK_RE = re.compile(r"\b(hook|intro|open|begin|start|dawn|first)\b", re.I)
 _CLIMAX_RE = re.compile(r"\b(climax|final|battle|war|death|collapse|crisis|peak)\b", re.I)
@@ -76,6 +85,7 @@ def _default_for_mood(mood: str, *, run_id: str, section_id: str) -> dict[str, s
             "direction": "left-right",
             "transition": "zoom",
             "text_overlay": "none",
+            "motion_graphic": "none",
         }
     if mood == "climax":
         return {
@@ -84,6 +94,7 @@ def _default_for_mood(mood: str, *, run_id: str, section_id: str) -> dict[str, s
             "direction": "left-right",
             "transition": "film-burn",
             "text_overlay": "chapter_title",
+            "motion_graphic": "none",
         }
     if mood == "tension":
         return {
@@ -92,6 +103,7 @@ def _default_for_mood(mood: str, *, run_id: str, section_id: str) -> dict[str, s
             "direction": _pick(PARALLAX_DIRS, run_id, sid, "dir"),
             "transition": "glitch",
             "text_overlay": "lower_third" if _seed(run_id, sid) % 2 else "none",
+            "motion_graphic": "none",
         }
     if mood == "calm":
         return {
@@ -100,6 +112,7 @@ def _default_for_mood(mood: str, *, run_id: str, section_id: str) -> dict[str, s
             "direction": "top-bottom",
             "transition": "dissolve",
             "text_overlay": "none",
+            "motion_graphic": "none",
         }
     if mood == "outro":
         return {
@@ -108,6 +121,7 @@ def _default_for_mood(mood: str, *, run_id: str, section_id: str) -> dict[str, s
             "direction": "right-left",
             "transition": "fade",
             "text_overlay": "none",
+            "motion_graphic": "none",
         }
     if mood == "list_item":
         return {
@@ -116,6 +130,7 @@ def _default_for_mood(mood: str, *, run_id: str, section_id: str) -> dict[str, s
             "direction": _pick(PARALLAX_DIRS, run_id, sid, "list"),
             "transition": _pick(("slide", "wipeleft", "fade"), run_id, sid, "tr"),
             "text_overlay": "chapter_title",
+            "motion_graphic": "none",
         }
     # reveal / default — vary by seed so consecutive scenes differ
     return {
@@ -124,6 +139,7 @@ def _default_for_mood(mood: str, *, run_id: str, section_id: str) -> dict[str, s
         "direction": _pick(PARALLAX_DIRS, run_id, sid, "dir"),
         "transition": _pick(TRANSITION_STYLES, run_id, sid, "tr"),
         "text_overlay": _pick(("none", "chapter_title", "lower_third", "none"), run_id, sid, "text"),
+        "motion_graphic": "none",
     }
 
 
@@ -187,6 +203,21 @@ def normalize_visual_treatment(
     llm_mood = _str("mood", allowed=MOODS)
     if llm_mood and llm_mood.replace("-", "_") in MOODS:
         base["mood"] = llm_mood.replace("-", "_")
+
+    mg = _str(
+        "motion_graphic",
+        "motionGraphic",
+        "template",
+        "graphic",
+        allowed=MOTION_GRAPHICS,
+    )
+    if mg:
+        # Keep hyphenated ids for chart/split templates
+        normalized = mg.replace("_", "-")
+        if normalized in MOTION_GRAPHICS:
+            base["motion_graphic"] = normalized
+        elif mg.replace("-", "_") == "none":
+            base["motion_graphic"] = "none"
 
     return base
 

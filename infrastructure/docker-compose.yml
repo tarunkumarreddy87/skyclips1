@@ -2,6 +2,7 @@
 # Build context is the monorepo root (parent of this folder).
 
 x-app-env: &app-env
+  APP_ENVIRONMENT: development
   DATABASE_URL: postgresql+asyncpg://hanuman:hanuman@postgres:5432/hanuman
   REDIS_URL: redis://redis:6379/0
   S3_ENDPOINT: http://minio:9000
@@ -19,15 +20,26 @@ x-app-env: &app-env
   TEMPORAL_TASK_QUEUE_MEDIA: media
   API_BASE_URL: http://api:8000
   INTERNAL_API_KEY: dev-internal
+  # Use the project's real Supabase Auth tenant in the API so each access token
+  # resolves to its own HANUMAN user instead of the shared local dev identity.
+  SUPABASE_URL: ${SUPABASE_URL:-${NEXT_PUBLIC_SUPABASE_URL:-}}
+  SUPABASE_ANON_KEY: ${SUPABASE_ANON_KEY:-${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}}
+  SUPABASE_JWT_SECRET: ${SUPABASE_JWT_SECRET:-}
   # Default false — silent stub scripts/TTS look like "completed with nothing".
   # Set HANUMAN_STUB_MODE=true in .env only for offline CI / offline demos.
   HANUMAN_STUB_MODE: ${HANUMAN_STUB_MODE:-false}
+  PRODUCTION_AGENT_ENABLED: ${PRODUCTION_AGENT_ENABLED:-true}
   ALLOW_SILENT_TTS_FALLBACK: ${ALLOW_SILENT_TTS_FALLBACK:-false}
   CORS_ORIGINS: http://localhost:3000
   OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  OPENROUTER_IMAGE_API_KEY: ${OPENROUTER_IMAGE_API_KEY:-}
   OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/free}
   OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
+  OPENROUTER_MAX_TOKENS: ${OPENROUTER_MAX_TOKENS:-2048}
+  OPENROUTER_TIMEOUT_SECONDS: ${OPENROUTER_TIMEOUT_SECONDS:-45}
+  OPENROUTER_FALLBACK_MODEL: ${OPENROUTER_FALLBACK_MODEL-openrouter/free}
   PEXELS_API_KEY: ${PEXELS_API_KEY:-}
+  SERPAPI_API_KEY: ${SERPAPI_API_KEY:-}
   SARVAM_API_KEY: ${SARVAM_API_KEY:-}
   SARVAM_TTS_MODEL: ${SARVAM_TTS_MODEL:-bulbul:v3}
   SARVAM_TTS_SPEAKER: ${SARVAM_TTS_SPEAKER:-shubh}
@@ -36,29 +48,26 @@ x-app-env: &app-env
   SARVAM_TTS_SAMPLE_RATE: ${SARVAM_TTS_SAMPLE_RATE:-22050}
   SARVAM_TTS_PACE: ${SARVAM_TTS_PACE:-1.0}
   SARVAM_TTS_TEMPERATURE: ${SARVAM_TTS_TEMPERATURE:-0.6}
-  # Production: Remotion Lambda via render-service (no local Chromium in Docker).
-  RENDER_ENGINE: ${RENDER_ENGINE:-remotion-lambda}
+  # Native rendering through cloud render-service.
+  RENDER_ENGINE: ${RENDER_ENGINE:-native}
   RENDER_FFMPEG_FALLBACK: ${RENDER_FFMPEG_FALLBACK:-false}
   RENDER_SERVICE_URL: http://render-service:8081
   RENDER_SERVICE_API_KEY: ${RENDER_SERVICE_API_KEY:-}
   AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
   AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
   AWS_REGION: ${AWS_REGION:-us-east-1}
-  REMOTION_FUNCTION_NAME: ${REMOTION_FUNCTION_NAME:-}
-  REMOTION_SERVE_URL: ${REMOTION_SERVE_URL:-}
-  REMOTION_BUCKET_NAME: ${REMOTION_BUCKET_NAME:-}
-  REMOTION_FRAMES_PER_LAMBDA: ${REMOTION_FRAMES_PER_LAMBDA:-120}
   S3_BUCKET_NAME: hanuman-artifacts
 
 services:
   postgres:
+    restart: unless-stopped
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: hanuman
       POSTGRES_PASSWORD: hanuman
       POSTGRES_DB: hanuman
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -68,9 +77,10 @@ services:
       retries: 10
 
   redis:
+    restart: unless-stopped
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -78,14 +88,15 @@ services:
       retries: 10
 
   minio:
+    restart: unless-stopped
     image: minio/minio:latest
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - minio_data:/data
 
@@ -96,12 +107,19 @@ services:
         condition: service_started
     entrypoint: >
       /bin/sh -c "
-      mc alias set local http://minio:9000 minioadmin minioadmin &&
+      attempt=0;
+      until mc alias set local http://minio:9000 minioadmin minioadmin; do
+        attempt=$$((attempt + 1));
+        if [ $$attempt -ge 30 ]; then exit 1; fi;
+        sleep 2;
+      done;
+
       mc mb --ignore-existing local/hanuman-artifacts &&
       exit 0
       "
 
   temporal:
+    restart: unless-stopped
     image: temporalio/auto-setup:1.25.2
     depends_on:
       postgres:
@@ -114,11 +132,12 @@ services:
       POSTGRES_SEEDS: postgres
       DYNAMIC_CONFIG_FILE_PATH: config/dynamicconfig/development.yaml
     ports:
-      - "7233:7233"
+      - "127.0.0.1:7233:7233"
     volumes:
       - ./temporal/dynamicconfig:/etc/temporal/config/dynamicconfig
 
   temporal-ui:
+    restart: unless-stopped
     image: temporalio/ui:2.31.0
     depends_on:
       temporal:
@@ -127,7 +146,7 @@ services:
       TEMPORAL_ADDRESS: temporal:7233
       TEMPORAL_CORS_ORIGINS: http://localhost:3000
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
 
   migrate:
     build:
@@ -142,11 +161,12 @@ services:
     restart: "no"
 
   api:
+    restart: unless-stopped
     build:
       context: ..
       dockerfile: apps/api/Dockerfile
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       <<: *app-env
     depends_on:
@@ -202,19 +222,28 @@ services:
       context: ..
       dockerfile: render-service/Dockerfile
     ports:
-      - "8081:8081"
+      # Loopback only: unauthenticated unless RENDER_SERVICE_API_KEY is set. Containers
+      # use render-service:8081 on the compose network; host-run workers use localhost.
+      - "127.0.0.1:8081:8081"
     environment:
       <<: *app-env
+      RENDER_CACHE_DIR: /var/cache/hanuman-render
+      RENDER_CACHE_MAX_BYTES: ${RENDER_CACHE_MAX_BYTES:-5368709120}
+      RENDER_CACHE_TTL_SEC: ${RENDER_CACHE_TTL_SEC:-604800}
+      THREE_CAPTURE_MODE: ${THREE_CAPTURE_MODE:-auto}
+      THREE_REQUIRE_GPU: ${THREE_REQUIRE_GPU:-0}
+      THREE_ANGLE_BACKEND: ${THREE_ANGLE_BACKEND:-}
       PORT: 8081
       HOST: 0.0.0.0
       S3_ENDPOINT: http://minio:9000
       S3_ACCESS_KEY: minioadmin
       S3_SECRET_KEY: minioadmin
       S3_BUCKET_NAME: hanuman-artifacts
-      # Remotion Lambda requires real AWS credentials — set in .env for production.
+      # Cloud object storage credentials.
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
-      REMOTION_SERVE_URL: ${REMOTION_SERVE_URL:-}
+    volumes:
+      - native_render_cache:/var/cache/hanuman-render
     healthcheck:
       test: ["CMD-SHELL", "node -e \"fetch('http://127.0.0.1:8081/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
       interval: 10s
@@ -230,7 +259,9 @@ services:
       args:
         API_INTERNAL_URL: http://api:8000
         NEXT_PUBLIC_API_URL: http://localhost:8000
-        NEXT_PUBLIC_PREVIEW_ENGINE: ${NEXT_PUBLIC_PREVIEW_ENGINE:-remotion}
+        NEXT_PUBLIC_PREVIEW_ENGINE: ${NEXT_PUBLIC_PREVIEW_ENGINE:-native}
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:-}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:-}
     ports:
       - "3000:3000"
     environment:
@@ -239,8 +270,8 @@ services:
       # Server-side rewrite target. Inside Docker, localhost:8000 is the web container
       # itself — the /api/* rewrite must hit the API service by its Docker hostname.
       API_INTERNAL_URL: http://api:8000
-      # Remotion Player preview in the editor (timeline / transitions / animations).
-      NEXT_PUBLIC_PREVIEW_ENGINE: ${NEXT_PUBLIC_PREVIEW_ENGINE:-remotion}
+      # Native deterministic preview in the editor.
+      NEXT_PUBLIC_PREVIEW_ENGINE: ${NEXT_PUBLIC_PREVIEW_ENGINE:-native}
     depends_on:
       api:
         condition: service_healthy
@@ -249,3 +280,4 @@ services:
 volumes:
   postgres_data:
   minio_data:
+  native_render_cache:

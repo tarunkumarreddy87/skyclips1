@@ -1,5 +1,8 @@
 import type { Project } from "./project";
 import type { Quote } from "./quote";
+export type { MotionScene, MotionSceneLayer, MotionKeyframe } from "./motion-scene";
+export type { ClipVisualEffects } from "./visual-effects";
+export { VIDEO_FILTERS, VIDEO_EFFECTS, clipVisualFilter } from "./visual-effects";
 
 export interface Brief {
   id: string;
@@ -59,13 +62,23 @@ export type {
   MotionTemplateCategory,
   MotionTemplateMeta,
   TemplateId,
+  EditorialARollId,
+  EditorialARollTemplate,
+  MotionComponentId,
 } from "./motion-templates";
 export {
   MOTION_TEMPLATE_IDS,
+  EDITORIAL_A_ROLL_IDS,
+  isEditorialARollId,
   MOTION_TEMPLATE_CATALOG,
+  MOTION_GRAPHIC_MANIFEST_TYPES,
   getTemplateMeta,
+  getTemplateByManifestType,
   templatesByCategory,
   shippedTemplates,
+  shippedMotionGraphicTemplates,
+  defaultSlotsForTemplate,
+  isMotionGraphicManifestType,
   stillClipKenBurnsAnimation,
   stillClipParallaxPanAnimation,
 } from "./motion-templates";
@@ -77,7 +90,11 @@ export {
   captionsForSectionWindow,
 } from "./caption-chunks";
 export type { CaptionChunk, TtsPieceClock } from "./caption-chunks";
+export type { TimelineManifestV1, VideoClip, BrollClip, AudioClip, MusicClip, CaptionClip, Overlay, Transition, TransitionType, ElementTransform, ElementAnimation, AnimationPreset, LoopPreset, AnimationEdge, ParallaxPanParams, ParallaxDirection, GraphicObject, GraphicKeyframe, TextStyle } from "./timeline";
 export type { OverlayChromeTheme, ChapterVariant, StyleBag } from "./overlay-chrome";
+export { DOCUMENTARY_LAYOUTS } from "./motion-templates";
+export type { DocumentaryLayout } from "./motion-templates";
+export type { HtmlTemplate, HtmlTemplateAsset, TemplateLayerEdit } from "./html-template";
 export {
   resolveChapterVariant,
   chapterTitleChromeStyle,
@@ -85,3 +102,6 @@ export {
   cssColorFromThemeToken,
   overlayChromeFromPalette,
 } from "./overlay-chrome";
+
+export { threeSceneSchema, threeSceneDataSchema, threeObjectPose, createThreePreset } from "./three-scene";
+export type { ThreeScene, ThreeObject, ThreeVector } from "./three-scene";

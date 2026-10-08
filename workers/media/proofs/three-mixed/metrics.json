@@ -1,0 +1,24 @@
+{
+  "resolution": [
+    1920,
+    1080
+  ],
+  "fps": 30,
+  "duration_sec": 6,
+  "cold_sec": 15.352308499976061,
+  "warm_sec": 1.449714899994433,
+  "three": {
+    "elapsed_sec": 4.154561500000001,
+    "jobs": [
+      {
+        "output": "D:\\HANUMAN\\workers\\media\\proofs\\three-mixed\\20261002T130742\\cold\\three\\a065d48b13c7cd55565b1505873206929940513f3a72af399b95b44d4320e8c9.mp4",
+        "backend": "ANGLE (Intel, Intel(R) UHD Graphics (0x0000A7A8) Direct3D11 vs_5_0 ps_5_0, D3D11)",
+        "capture": "webcodecs-h264",
+        "frames": 60,
+        "readback_ms": 87.40000015497208,
+        "transfer_ms": 574.1999999880791,
+        "elapsed_sec": 3.6774323
+      }
+    ]
+  }
+}

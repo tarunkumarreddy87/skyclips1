@@ -1,0 +1,25 @@
+import assert from "node:assert/strict";
+import { createEditorState } from "./mock-data";
+import { useEditorStore } from "./store";
+import { buildTimelineManifestV1FromEditorState } from "./build-timeline-manifest";
+import { resolveMediaUrl } from "./media-url";
+
+process.env.NEXT_PUBLIC_EDITOR_USE_MOCK = "true";
+const state = createEditorState("00000000-0000-4000-8000-000000000001");
+state.timeline.tracks = state.timeline.tracks.filter(t => t.type !== "sfx");
+useEditorStore.setState(state);
+const id = useEditorStore.getState().addSfx({url: "/sfx/motion-whoosh.wav", durationMs: 800, startMs: 1000});
+const after = useEditorStore.getState();
+assert.ok(after.timeline.tracks.find(t => t.type === "sfx")?.items.some(i => i.id === id));
+const durable = buildTimelineManifestV1FromEditorState(state.project.id, after);
+assert.equal(durable.tracks.music?.find(m => m.id === id)?.src, "static:sfx/motion-whoosh.wav");
+const browser = buildTimelineManifestV1FromEditorState(state.project.id, after, {srcMode: "browser"});
+assert.equal(browser.tracks.music?.find(m => m.id === id)?.src, "/sfx/motion-whoosh.wav");
+assert.equal(resolveMediaUrl("static:sfx/motion-whoosh.wav"), "/sfx/motion-whoosh.wav");
+const video = after.timeline.tracks.find(t => t.type === "video")!;
+useEditorStore.setState({timeline: {...after.timeline, transitions: [{id: "test", afterItemId: video.items[0].id, transitionType: "zoom", durationMs: 500, enabled: true}]}});
+useEditorStore.getState().setTransitionSound("test", false);
+assert.equal(useEditorStore.getState().timeline.transitions[0].sfxMuted, true);
+useEditorStore.getState().undo();
+assert.ok(!useEditorStore.getState().timeline.transitions[0].sfxMuted);
+console.log("Sound library: missing lane, durable/browser sources, mute and undo passed");

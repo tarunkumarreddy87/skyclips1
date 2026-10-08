@@ -1,8 +1,9 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
 from app.schemas.common import ApiModel
+from app.schemas.motion_templates import UploadedMotionTemplate
 
 
 class GenerationRunResponse(ApiModel):
@@ -22,14 +23,48 @@ class StartGenerationResponse(ApiModel):
     workflow_id: str = Field(serialization_alias="workflowId")
 
 
+class ChannelMotionGraphics(ApiModel):
+    enabled: bool = False
+    mode: Literal["selected", "auto", "custom", "none"] = "selected"
+    selected_template_ids: list[str] = Field(default_factory=list, alias="selectedTemplateIds", max_length=10)
+    template_id: Literal["press-cutout-v1"] = Field(default="press-cutout-v1", alias="templateId")
+    sound_enabled: bool = Field(default=True, alias="soundEnabled")
+    intensity: Literal["subtle", "cinematic"] = "cinematic"
+
+
 class BrandCompliancePayload(ApiModel):
     """Optional Brand Profile compliance flags (client localStorage → worker)."""
+
+    profile_id: str | None = Field(default=None, alias="profileId", max_length=128)
+    theme_id: str | None = Field(default=None, alias="themeId", max_length=32)
+    language: str | None = Field(default=None, max_length=16)
+    caption_script: str = Field(default="latin", alias="captionScript", pattern=r"^(latin|native)$")
+    ai_generated_images: bool = Field(default=False, alias="aiGeneratedImages")
+    image_model: str | None = Field(default=None, alias="imageModel", max_length=128)
+    voice_id: str | None = Field(default=None, alias="voiceId", max_length=128)
+    uploaded_templates: list[UploadedMotionTemplate] = Field(default_factory=list, alias="uploadedTemplates", max_length=10)
+    motion_graphics: ChannelMotionGraphics | None = Field(default=None, alias="motionGraphics")
+    disable_effects: bool = Field(default=False, alias="disableEffects")
+    background_color: str | None = Field(default=None, alias="backgroundColor", pattern=r"^#[0-9a-fA-F]{6}$")
+    commercial_stock: bool = Field(default=True, alias="commercialStock")
+    cc_public_domain: bool = Field(default=False, alias="ccPublicDomain")
+    general_web_crawling: bool = Field(default=False, alias="generalWebCrawling")
+    blacklisted_webpages: list[str] = Field(default_factory=list, alias="blacklistedWebpages", max_length=200)
 
     disable_overlays: bool = Field(default=False, alias="disableOverlays")
     disable_animations: bool = Field(default=False, alias="disableAnimations")
     blocklisted_transitions: list[str] = Field(
         default_factory=list,
         alias="blocklistedTransitions",
+    )
+    template_mode: str = Field(default="auto", alias="templateMode")
+    blocklisted_templates: list[str] = Field(
+        default_factory=list,
+        alias="blocklistedTemplates",
+    )
+    allowed_templates: list[str] = Field(
+        default_factory=list,
+        alias="allowedTemplates",
     )
 
 

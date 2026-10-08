@@ -15,4 +15,4 @@ build-backend = "hatchling.build"
 packages = ["hanuman_timeline_schema"]
 
 [tool.hatch.build.targets.wheel.force-include]
-"hanuman_timeline_schema/schema/timeline.v1.json" = "hanuman_timeline_schema/schema/timeline.v1.json"
+"../schema/timeline.v1.json" = "hanuman_timeline_schema/schema/timeline.v1.json"

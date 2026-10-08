@@ -6,8 +6,10 @@ From the **repository root**:
 
 ```bash
 cp .env.example .env
-docker compose -f infrastructure/docker-compose.yml up --build -d
+docker compose --env-file .env -f infrastructure/docker-compose.yml up --build -d
 ```
+
+The web build reads `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` from the repository `.env`. It stops with a clear error if either is missing, instead of publishing a sign-in page with broken Auth.
 
 This starts:
 
@@ -60,3 +62,10 @@ make web
 ```
 
 See [../README.md](../README.md) and [../docs/runbooks/local-dev.md](../docs/runbooks/local-dev.md).
+
+## Local GPU rendering
+
+NVIDIA acceleration is optional through `docker-compose.gpu.yml`; it is not
+required for the normal CPU stack. See [ADR 0012 GPU setup](../docs/adr/0012-native-video-engine.md#optional-local-nvidia-gpu)
+for the Compose command, actual NVENC verification, cache preservation, and the
+limits of encoding-only acceleration.
