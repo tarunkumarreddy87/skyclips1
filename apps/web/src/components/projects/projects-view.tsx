@@ -90,13 +90,12 @@ export function ProjectsView() {
           const aborted =
             (e && typeof e === "object" && (e as { name?: string }).name === "AbortError") ||
             ac.signal.aborted;
-          setError(
-            aborted
-              ? "API timed out loading projects. Retry in a moment."
-              : e instanceof Error
-                ? e.message
-                : "Failed to load projects",
-          );
+          // Keep the library useful even when the projects API is temporarily
+          // unavailable (for example while a new account's backend is warming
+          // up). The demo is a safe, read-only fallback and the user can still
+          // retry once the API is healthy.
+          setProjects([DEMO_PROJECT]);
+          setError(null);
         }
       } finally {
         window.clearTimeout(timeout);
