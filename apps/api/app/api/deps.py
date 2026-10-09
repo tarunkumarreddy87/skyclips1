@@ -4,6 +4,7 @@ import hmac
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.db.models import Brief, EntryPath, FormatMode, Project, ProjectStatus, User
@@ -18,7 +19,9 @@ from app.services.storage import StorageService, get_storage_service
 from app.services.supabase_auth import supabase_auth_enabled, verify_supabase_access_token
 
 DEV_USER_ID = "00000000-0000-0000-0000-000000000001"
-DEMO_PROJECT_TITLE = "SkyClip demo: Product launch"
+DEMO_SOURCE_PROJECT_ID = "498598ae-d9df-4e6f-b868-a4d591aa7797"
+DEMO_PROJECT_TITLE = "Demo video: Elon Musk life story"
+LEGACY_DEMO_PROJECT_TITLE = "SkyClip demo: Product launch"
 
 
 async def _ensure_demo_project(session: AsyncSession, user: User) -> None:
@@ -29,12 +32,23 @@ async def _ensure_demo_project(session: AsyncSession, user: User) -> None:
     a demo from the normal studio flow.
     """
     existing = await session.execute(
-        select(Project.id).where(
+        select(Project).options(selectinload(Project.brief)).where(
             Project.user_id == user.id,
-            Project.title == DEMO_PROJECT_TITLE,
+        Project.title.in_((DEMO_PROJECT_TITLE, LEGACY_DEMO_PROJECT_TITLE)),
         ).limit(1)
     )
-    if existing.scalar_one_or_none() is not None:
+    project = existing.scalar_one_or_none()
+    if project is not None:
+        project.title = DEMO_PROJECT_TITLE
+        project.workflow_id = DEMO_SOURCE_PROJECT_ID
+        if project.brief is not None:
+            project.brief.prompt_text = (
+                "Create a polished video about Elon Musk's life story: "
+                "how he started, the risks he took, and how he succeeded, "
+                "with a strong hook, clear story, captions, B-roll, motion "
+                "graphics, music, and tasteful sound effects."
+            )
+        await session.commit()
         return
     project = Project(
         user_id=user.id,
@@ -42,14 +56,15 @@ async def _ensure_demo_project(session: AsyncSession, user: User) -> None:
         status=ProjectStatus.DRAFT,
         entry_path=EntryPath.PROMPT_FIRST,
         format_mode=FormatMode.DOCUMENTARY,
+        workflow_id=DEMO_SOURCE_PROJECT_ID,
     )
     session.add(project)
     session.add(Brief(
         project=project,
         prompt_text=(
-            "Create a polished 60-second product launch video for SkyClip, "
-            "with a strong hook, clear story, captions, B-roll, motion graphics, "
-            "music, and tasteful sound effects."
+            "Create a polished video about Elon Musk's life story: how he started, "
+            "the risks he took, and how he succeeded, with a strong hook, clear "
+            "story, captions, B-roll, motion graphics, music, and tasteful sound effects."
         ),
         target_duration_sec=60,
         language="en",
