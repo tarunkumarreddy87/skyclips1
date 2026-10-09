@@ -1,7 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nextjs",
-  "installCommand": "corepack enable && pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm --filter @hanuman/web build",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- apps/web packages/shared-types packages/video-engine pnpm-lock.yaml package.json"
+  "builds": [{ "src": "api/index.py", "use": "@vercel/python" }],
+  "routes": [{ "src": "/(.*)", "dest": "api/index.py" }]
 }
