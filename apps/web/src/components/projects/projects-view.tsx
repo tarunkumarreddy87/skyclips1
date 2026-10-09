@@ -207,7 +207,10 @@ export function ProjectsView() {
           <ul className="flex flex-col gap-1.5">
             {filtered.map((project) => {
               const thumbnail = projectThumbnailUrl(project.id, project.formatMode);
-              const href = projectHref(project.status, project.id);
+              const href =
+                project.id === DEMO_PROJECT.id
+                  ? `/studio?demo=${encodeURIComponent(project.id)}`
+                  : projectHref(project.status, project.id);
 
               return (
                 <li key={project.id}>
@@ -260,7 +263,11 @@ export function ProjectsView() {
               return (
                 <Link
                   key={project.id}
-                  href={projectHref(project.status, project.id)}
+                  href={
+                    project.id === DEMO_PROJECT.id
+                      ? `/studio?demo=${encodeURIComponent(project.id)}`
+                      : projectHref(project.status, project.id)
+                  }
                   className="group block"
                 >
                   <div className="overflow-hidden rounded-2xl border border-border/60 bg-card shadow-sm transition-all duration-300 group-hover:-translate-y-0.5 group-hover:border-border group-hover:shadow-md">
