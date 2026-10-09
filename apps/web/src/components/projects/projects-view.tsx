@@ -23,6 +23,20 @@ import { Input } from "@/components/ui/input";
 
 type ListItem = Project & { prompt?: string };
 
+// Keep the known local production as a visible demo while an account's first
+// authenticated API request is creating its server-side demo project.
+const DEMO_PROJECT: ListItem = {
+  id: "498598ae-d9df-4e6f-b868-a4d591aa7797",
+  userId: "demo",
+  title: "Demo video: Elon Musk life story",
+  status: "completed",
+  entryPath: "prompt_first",
+  formatMode: "documentary",
+  createdAt: "2026-01-01T00:00:00.000Z",
+  updatedAt: "2026-01-01T00:00:00.000Z",
+  prompt: "How Elon Musk started and built his career",
+};
+
 
 
 export function ProjectsView() {
@@ -65,7 +79,12 @@ export function ProjectsView() {
       }
       try {
         const result = await listProjects(ac.signal);
-        if (!cancelled) setProjects(result.items);
+        if (!cancelled) {
+          // The demo is intentionally shown even for a newly-created account
+          // whose seed request has not completed yet. Real projects remain
+          // account-scoped and are returned by the API unchanged.
+          setProjects(result.items.length ? result.items : [DEMO_PROJECT]);
+        }
       } catch (e) {
         if (!cancelled) {
           const aborted =
