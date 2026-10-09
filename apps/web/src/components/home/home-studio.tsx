@@ -12,6 +12,10 @@ export function HomeStudio() {
     try {
       const seeded =
         new URLSearchParams(window.location.search).get("prompt")?.slice(0, 3600) ||
+        (new URLSearchParams(window.location.search).get("demo") ===
+        "498598ae-d9df-4e6f-b868-a4d591aa7797"
+          ? "How Elon Musk started and built his career"
+          : null) ||
         sessionStorage.getItem("skyclip_seed_prompt") ||
         sessionStorage.getItem("hanuman_seed_prompt");
       if (seeded) {
