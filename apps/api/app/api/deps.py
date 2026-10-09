@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.db.models import User
+from app.db.models import Brief, EntryPath, FormatMode, Project, ProjectStatus, User
 from app.db.session import get_session
 from app.services.editor_snapshot_service import EditorSnapshotService
 from app.services.generation_service import GenerationService
@@ -18,6 +18,45 @@ from app.services.storage import StorageService, get_storage_service
 from app.services.supabase_auth import supabase_auth_enabled, verify_supabase_access_token
 
 DEV_USER_ID = "00000000-0000-0000-0000-000000000001"
+DEMO_PROJECT_TITLE = "SkyClip demo: Product launch"
+
+
+async def _ensure_demo_project(session: AsyncSession, user: User) -> None:
+    """Give every signed-in account one clearly-labelled, editable demo project.
+
+    This is idempotent and intentionally creates only the project + brief. It does
+    not start a paid generation or render job; the user can open it and run it as
+    a demo from the normal studio flow.
+    """
+    existing = await session.execute(
+        select(Project.id).where(
+            Project.user_id == user.id,
+            Project.title == DEMO_PROJECT_TITLE,
+        ).limit(1)
+    )
+    if existing.scalar_one_or_none() is not None:
+        return
+    project = Project(
+        user_id=user.id,
+        title=DEMO_PROJECT_TITLE,
+        status=ProjectStatus.DRAFT,
+        entry_path=EntryPath.PROMPT_FIRST,
+        format_mode=FormatMode.DOCUMENTARY,
+    )
+    session.add(project)
+    session.add(Brief(
+        project=project,
+        prompt_text=(
+            "Create a polished 60-second product launch video for SkyClip, "
+            "with a strong hook, clear story, captions, B-roll, motion graphics, "
+            "music, and tasteful sound effects."
+        ),
+        target_duration_sec=60,
+        language="en",
+        model_id="hanuman-v1",
+        brand_profile_id="bp-1",
+    ))
+    await session.commit()
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
@@ -78,9 +117,11 @@ async def get_current_user(
                     headers={"WWW-Authenticate": "Bearer"},
                 )
             # Never trust spoofable X-User-External-Id when Supabase Auth is on.
-            return await _upsert_user(
+            user = await _upsert_user(
                 session, external_id=identity.sub, email=identity.email
             )
+            await _ensure_demo_project(session, user)
+            return user
 
         # Dev identity is deliberately available only in explicit stub mode.
         # With auth missing in real mode, never accept a caller-controlled user id.
