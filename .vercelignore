@@ -12,7 +12,6 @@ venv
 __pycache__
 **/__pycache__
 workers
-apps/api
 infrastructure
 docs
 .tmp
