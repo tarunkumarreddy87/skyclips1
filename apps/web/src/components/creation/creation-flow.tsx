@@ -53,6 +53,15 @@ export function CreationFlow() {
       const existing = getProjectById(existingId);
       if (existing) return { ...existing };
     }
+    const demoId = searchParams.get("demo");
+    if (demoId === "498598ae-d9df-4e6f-b868-a4d591aa7797") {
+      return createDraftProject("How Elon Musk started and built his career", {
+        brandProfileId: searchParams.get("brand") ?? "bp-1",
+        model: (searchParams.get("model") as ModelId) ?? "skyclip-v1",
+        reasoning: (searchParams.get("reasoning") as ReasoningLevel) ?? "balanced",
+        title: "Demo video: Elon Musk life story",
+      });
+    }
     const prompt = searchParams.get("prompt") ?? "";
     const attachment = searchParams.get("attachment");
     const attachmentName = searchParams.get("attachmentName");
