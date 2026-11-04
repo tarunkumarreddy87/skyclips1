@@ -1,10 +1,34 @@
 # Codex for OSS application draft
 
-**Status:** Draft only. All claims below are limited to source-visible evidence. Applicant ownership, application eligibility, usage and impact statements need maintainer confirmation.
+**Status:** Application preparation draft. Public program criteria were checked against OpenAI's official Codex for OSS page and terms. This is not submitted. Complete the applicant-specific facts and verify current program fields before submitting. Never claim adoption, usage, impact, maintainer duties, or ownership without evidence.
+
+## Form-ready application text (verify before submitting)
+
+The official form requires identity/account details, public GitHub identity and repository, a Primary or Core maintainer selection, a qualification statement (maximum 500 characters), an OpenAI Organization ID, and a project API-credit use statement (maximum 500 characters). Use the exact email associated with the applicant's ChatGPT account. The Organization ID must come from the applicant's account/workspace; do not guess or publish it in this repository.
+
+**Suggested role:** Primary maintainer — select this only if accurate and verifiable from repository control and actual ongoing maintenance.
+
+**Qualification statement (under 500 characters; no adoption claim):**
+
+> Skyclip is a public, actively developed AI video-generation and editing platform with a custom timeline/video engine and a multi-service rendering pipeline. I maintain the project and am improving its contributor documentation, CI, security posture, and reproducibility. The project addresses the engineering challenge of deterministic motion graphics and timeline-based video export across browser and media-processing runtimes. Repository: https://github.com/tarunkumarreddy87/skyclips1
+
+Before using this, substantiate “I maintain” and “actively developed” with your actual role, recent commits, and maintenance activity. If the project is not yet accepting outside contributors, say that clearly in the optional notes.
+
+**API-credit use statement (under 500 characters):**
+
+> API credits would support development and testing of Skyclip's open-source video-generation workflows: script and scene planning, regression tests for timeline/render behavior, contributor-facing automation, and CI-assisted code review. I would track usage against specific engineering tasks, keep credentials out of the repository, and review generated changes before merging. Credits would be used only for Skyclip project work.
+
+This statement is an intended use plan, not a claim that the workflow is already deployed.
+
+**Optional additional information (under 500 characters; personalize):**
+
+> Skyclip is still maturing. I am addressing reproducible setup, test reliability, dependency findings, SSRF protections for remote media, and isolation for browser-based rendering. I can provide links to my representative commits and explain the design decisions and maintenance responsibilities. I will not claim user/adoption metrics or benchmark results unless I can verify them.
+
+Add two or three links to representative commits or merged PRs that demonstrate your own contributions, and explain what you personally designed, implemented, reviewed, and maintain. Do not submit this text until those statements match the applicant's real work.
 
 ## Project
 
-**Project name:** Skyclip (repository currently contains mixed HANUMAN/Skyclip identifiers; public name needs confirmation).  
+**Project name:** Skyclip. The source tree still contains legacy HANUMAN identifiers in package and environment metadata; clarify whether these are historical internal names or need renaming before public release.  
 **Repository:** https://github.com/tarunkumarreddy87/skyclips1
 
 Skyclip is an AI-assisted video-generation and editing platform. The repository contains a Next.js frontend, FastAPI API, Temporal workflow/orchestration worker, Python media worker, Node render service and shared TypeScript rendering/timeline packages.
@@ -53,7 +77,7 @@ Codex could support maintainers and external contributors by helping:
 
 ## Contributor support plan
 
-**[NEEDS CONFIRMATION]** Describe the intended contributor workflow, realistic review turnaround, maintainer availability, and how Codex-generated changes will be reviewed and tested before merge.
+**[NEEDS CONFIRMATION]** State whether outside contributions are currently accepted. If yes, give an honest review cadence and explain that Codex-generated changes are reviewed, tested, and approved by a human maintainer before merge. Do not promise a turnaround SLA that cannot be maintained.
 
 ## Evidence and missing information
 
@@ -70,4 +94,4 @@ Codex could support maintainers and external contributors by helping:
 
 ## Application positioning
 
-A credible application should position Skyclip as a technically substantial but still maturing multi-runtime project. Emphasize verifiable engineering work, clear contribution opportunities, a licence that permits community use, security and CI improvements, and a concrete plan for using Codex to help maintainers review and test contributions. Do not imply Codex for OSS acceptance is guaranteed.
+A credible application should present Skyclip as a public, technically substantial project that is still maturing. Focus on verifiable maintainer work, the project's specific engineering contribution, evidence of active maintenance, and a concrete API-credit plan. Public program guidance says OpenAI reviews usage, ecosystem importance, active maintenance, and maintainer responsibilities; selection remains discretionary. Do not imply acceptance is guaranteed.
