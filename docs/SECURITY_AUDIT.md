@@ -1,24 +1,25 @@
 # Security audit
 
 **Audited ref:** `main` at `838db1a0de352c59887ce9b4774a0b751b5d8b7f`  
+**Remediation branch:** `oss-readiness/audit-and-docs`  
 **Date:** 2026-11-05  
 **Method:** Static source inspection through GitHub. No runtime penetration test, dependency advisory scan, secret scan, or deployed-environment assessment was executed.
 
 ## Summary
 
-No exposed secret value is reproduced here. This review found two high-priority hardening areas and one additional high-risk isolation area. Findings are tied to the source and should be revalidated after fixes.
+No exposed secret value is reproduced here. This review found two high-priority hardening areas and one additional high-risk isolation area. One render-service configuration finding has been addressed in the remediation branch, but that code has not been executed or merged.
 
 ## Findings
 
-### High — render service permits unauthenticated access when the key is unset
+### High — render service permitted unauthenticated access when the key was unset
 
-**Evidence:** `render-service/src/api/routes.ts::verifyApiKey` returns without authentication when `config.RENDER_SERVICE_API_KEY` is empty. The variable is optional in `render-service/src/config.ts`; Compose supplies an empty default. The local Compose port binds to loopback, which limits that specific local exposure, but it does not protect a deployment that publishes the service elsewhere.
+**Evidence at audited main ref:** `render-service/src/api/routes.ts::verifyApiKey` returned without authentication when `config.RENDER_SERVICE_API_KEY` was empty. The variable was optional in `render-service/src/config.ts`; Compose supplied an empty default. The local Compose port bound to loopback, which limited that specific local exposure, but did not protect a deployment that published the service elsewhere.
 
-**Impact:** Unauthenticated clients could submit/cancel/query render jobs and invoke the template validator if the service is network-reachable.
+**Impact:** Unauthenticated clients could submit/cancel/query render jobs and invoke the template validator if the service was network-reachable.
 
-**Recommendation:** Fail closed in production: require a non-empty high-entropy key (or authenticated service identity) at process startup; exempt only `/health`. Keep local unauthenticated mode opt-in and bound to loopback. Add tests for production startup without a key, health access, and protected route rejection.
+**Remediation in this branch:** `render-service/src/config.ts` now exports a startup security assertion. `render-service/src/index.ts` invokes it before registering routes or listening; production startup fails when the API key is absent or whitespace-only. The render-service Dockerfile sets `NODE_ENV=production`. A test covers missing, whitespace-only and configured keys, plus local development/test modes. The render-service README documents the deployment requirement.
 
-**Status:** Not changed in this documentation-only branch.
+**Status:** Code and test added on the remediation branch. They have **not** been executed in CI or a local runtime and are not yet merged. Every deployment using the container image must configure `RENDER_SERVICE_API_KEY`; otherwise startup now fails by design. Direct local TypeScript development remains in development mode.
 
 ### High — user-influenced remote media URL staging may enable SSRF
 
@@ -28,7 +29,7 @@ No exposed secret value is reproduced here. This review found two high-priority 
 
 **Recommendation:** Prefer owned object-storage keys. For any necessary external URLs, use a narrowly scoped allowlist; resolve and reject loopback, private, link-local, multicast, reserved and metadata IPs; revalidate every redirect; pin connection targets to validated addresses; set strict byte/time limits; and enforce network egress restrictions at the worker/container layer. Add tests for IPv4/IPv6 private ranges, DNS rebinding, redirects and oversized responses.
 
-**Status:** Not changed in this documentation-only branch.
+**Status:** Not fixed. Requires trust-boundary review and dedicated network tests.
 
 ### High — arbitrary template code runs in browser automation
 
@@ -38,7 +39,7 @@ No exposed secret value is reproduced here. This review found two high-priority 
 
 **Recommendation:** Isolate browser rendering in a non-root ephemeral container/process with no cloud credentials, read-only filesystem, strict CPU/memory/PID/time limits, seccomp/AppArmor or equivalent, and no outbound network. Use patched Chromium and keep worker images current. Consider declarative SVG-only templates for untrusted contributor/user content.
 
-**Status:** Requires deployment-level design and tests; not changed here.
+**Status:** Requires deployment-level design and tests; not fixed in this branch.
 
 ## Positive controls observed
 
@@ -58,4 +59,4 @@ These controls do not substitute for a full threat model or runtime test.
 - SSRF, path traversal, command injection, upload abuse, resource exhaustion and browser sandbox penetration tests.
 - Production cloud IAM, object-store policy, network ACL and deployment ingress review.
 
-Do not state that the repository is free of secrets or vulnerabilities until those checks are completed.
+The CI definition added on the remediation branch includes Gitleaks, npm audit and pip-audit steps, but their results are pending an actual workflow run. Do not state that the repository is free of secrets or vulnerabilities until those checks are completed.
