@@ -68,9 +68,13 @@ Examples from the report:
 ## Checks not performed
 
 - Git history secret scanning and secret provider validation.
-- Full Python dependency CVE/advisory scan (the CI job stops after the npm audit failure; the `pip-audit` step is skipped).
+- Complete Python advisory coverage for internal editable packages. `pip-audit` reports local path dependencies as not found on PyPI and skips them; review these packages and bundled dependencies separately.
 - Authentication and authorization integration tests against a running stack.
 - SSRF, path traversal, command injection, upload abuse, resource exhaustion and browser sandbox penetration tests.
 - Production cloud IAM, object-store policy, network ACL and deployment ingress review.
 
-The CI definition added on the remediation branch includes Gitleaks, npm audit and pip-audit. Gitleaks passed on the latest push-triggered run; npm audit executed and found 130 advisories; pip-audit did not run because the Node audit step failed first. Do not state that the repository is free of secrets or vulnerabilities.
+The CI definition added on the remediation branch includes Gitleaks, npm audit and pip-audit in independent jobs. Gitleaks passed on the latest completed push-triggered run. npm audit reported 130 advisories: 4 critical, 56 high, 60 moderate and 10 low. The Python audit matrix reported 8 advisories in 3 packages in the orchestrator/media environments:
+- `anyio 4.14.1`: PYSEC-2026-4025, PYSEC-2026-4023 and PYSEC-2026-4024; listed fix version 4.14.2.
+- `certifi 2026.6.17`: PYSEC-2026-4320; listed fix version 2026.10.18.
+- `urllib3 2.7.0`: PYSEC-2026-4177, PYSEC-2026-4176 and PYSEC-2026-4175; listed fix version 2.8.0.
+The audit tool skips local editable packages that are not published on PyPI; those need internal source review. The API Python audit cannot install because its lockfile is stale relative to pyproject. Do not state that the repository is free of secrets or vulnerabilities.
