@@ -27,7 +27,7 @@ both runtimes and bundled fonts. There is no browser capture or Lambda deploymen
 - `RENDER_ENCODER=auto` probes an actual NVIDIA encode; unavailable GPU hardware falls back to `libx264`.
 - `RENDER_PARALLEL_SECTIONS=2` bounds section workers; `RENDER_MAX_CONCURRENT=1` bounds jobs.
 - `RENDER_JOB_MAX_RETRIES=1`, `RENDER_JOB_TIMEOUT_MS=7200000` bound retry and runtime.
-- `RENDER_SERVICE_API_KEY` protects render endpoints; health probes remain available.
+- `RENDER_SERVICE_API_KEY` protects render endpoints; health probes remain available. The container image sets `NODE_ENV=production` and refuses to start when this key is empty. Configure a strong key in every container deployment. Direct local development (`pnpm dev`) remains in development mode and can run without the key; keep it bound to a trusted local interface.
 - `REDIS_URL` enables durable jobs; `RENDER_GLOBAL_MAX_CONCURRENT` limits jobs across replicas.
 - `S3_PUBLIC_ENDPOINT` sets browser-accessible result URLs for local object storage.
 - `RENDER_CACHE_DIR` enables content-addressed completed-section caching on mounted storage.
