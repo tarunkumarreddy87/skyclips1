@@ -30,13 +30,16 @@ No confirmed critical vulnerability was established by this static inspection. R
 
 ### High
 
-1. **Render-service authentication was optional on the baseline (remediated in this branch, pending tests).**  
+1. **Node dependency graph contains unresolved critical/high advisories (confirmed by CI).**
+   GitHub Actions run `41919145743` reports 130 advisories: 4 critical, 56 high, 60 moderate and 10 low. Examples include `next@15.5.20` (critical; listed patched floor at least `15.5.28` for the SVG optimizer advisory), `fastify@5.10.0` (high; patched floor `5.12.2`), and `proxy-addr@2.0.7` (critical; patched floor `2.0.8`). These are advisory findings in the dependency graph, not 130 proven exploitable Skyclip defects. Triage by dependency path, upgrade compatible direct/transitive packages and rerun tests. CI correctly fails this gate until findings are resolved.
+
+2. **Render-service authentication was optional on the baseline (remediated in this branch and verified by CI).**  
    At the audited ref, `render-service/src/api/routes.ts` skipped key verification when `RENDER_SERVICE_API_KEY` was empty. The remediation branch now asserts a non-empty key at production service startup, and the container image sets `NODE_ENV=production`. Test coverage has been added but not executed. Deployments must supply a strong key.
 
-2. **Remote media fetch can access arbitrary URLs (potential SSRF; confirmed code path, exploitability depends on manifest trust boundary).**  
+3. **Remote media fetch can access arbitrary URLs (potential SSRF; confirmed code path, exploitability depends on manifest trust boundary).**  
    `workers/media/src/render/native_pipeline.py::stage_assets` calls `urllib.request.urlopen(src)` for HTTP(S) media without an evident scheme/host/IP allowlist or redirect revalidation. If a caller can cause a manifest to contain attacker-controlled URLs, the worker may reach internal services or cloud metadata endpoints. Add an allowlist/egress policy, reject loopback/private/link-local/reserved IPs after DNS resolution, revalidate redirects, and use size/time limits. Confirm all routes that can populate timeline source URLs before release.
 
-3. **Untrusted HTML/JavaScript template execution requires a hardened sandbox (high risk, not confirmed exploitable).**  
+4. **Untrusted HTML/JavaScript template execution requires a hardened sandbox (high risk, not confirmed exploitable).**  
    `render-service/src/native/validate-template.ts` and `render-html.ts` run template JavaScript in Chromium/Playwright. Request size/duration are bounded and browser network routing is restricted in the inspected process, but browser process isolation, OS sandbox/container privileges, CPU/memory limits and denial-of-service resistance require deployment verification. Never treat a browser route filter as a complete hostile-code sandbox. Consider running this renderer as a non-root user in a separately constrained container with no credentials and no network egress.
 
 ### Medium
@@ -53,22 +56,28 @@ No confirmed critical vulnerability was established by this static inspection. R
 4. **Contributor and security governance files were absent at baseline and have been drafted on the remediation branch.**  
    The new Code of Conduct and Security Policy contain explicit maintainer-confirmation placeholders for a monitored contact/reporting channel; these must be resolved before inviting community reports.
 
-5. **Project identity is inconsistent in historical files.**  
+5. **API dependency lock is stale.**
+   The CI `uv sync --locked --extra dev` step for `apps/api` fails with `uv.lock needs to be updated`. Regenerate and commit the lock using the repository's current `pyproject.toml`; do not remove `--locked` from CI as a workaround.
+
+6. **No consistent formatting/lint configuration.**
+   The repository does not have a consistent formatter/linter command that CI can run across all workspaces. The new CI currently validates types, tests, builds and security but does not claim formatting/lint checks. Adopt per-language tools only after choosing and documenting project conventions.
+
+7. **Project identity is inconsistent in historical files.**  
    Root README and the docs index now use Skyclip as the public-facing name, while internal npm/Python package identifiers and historical ADRs still use HANUMAN. These identifiers were not globally renamed because doing so could affect imports and deployment contracts.
 
-6. **Root workspace scripts reference tasks that packages may not implement.**  
+8. **Root workspace scripts reference tasks that packages may not implement.**  
    Root `package.json` exposes Turbo `build`, `lint`, and `typecheck`, but the inspected `packages/video-engine/package.json` defines only `typecheck` and `test`; `render-service` defines `build`, `typecheck`, and `test`. Confirm task availability across all workspace packages and add explicit root test orchestration.
 
-7. **Conflicting/legacy dependency declarations.**  
+9. **Conflicting/legacy dependency declarations.**  
    The API has `pyproject.toml` and a separate `requirements.txt`; they do not list exactly the same packages (for example, Alembic is in pyproject but absent from requirements). Document the canonical install path or keep them synchronized.
 
-8. **Package metadata remains private.**  
+10. **Package metadata remains private.**  
    `packages/video-engine`, `render-service`, and root package metadata use `private: true`. This may be intentional for an integrated application, but it means those packages are not currently published as public npm packages.
 
-9. **Benchmark evidence is not an external reproducible report.**  
+11. **Benchmark evidence is not an external reproducible report.**  
    The repository contains proof media/metric artifacts, and the ADR correctly says there is no measured basis for comparative speed claims. The benchmark plan was added to the branch, but no new benchmark was executed.
 
-10. **Docker image dependency reproducibility needs review.**  
+12. **Docker image dependency reproducibility needs review.**  
     Compose uses mutable tags such as `minio/minio:latest` and `minio/mc:latest`. Pin supported versions or digests for repeatable contributor setup.
 
 ### Low
@@ -115,14 +124,16 @@ Existing tests include:
 
 ## Remaining remediation order
 
-1. Harden remote media fetching against SSRF and untrusted redirects.
-2. Isolate HTML/JS rendering in a non-root, no-credentials, no-egress sandbox with resource limits.
-3. Run the new CI workflow and fix confirmed failures; verify dependency-audit tool behavior.
-4. Select a project licence and check third-party dependency/font/media attribution compatibility.
-5. Configure a private security-reporting channel and monitored community enforcement contact.
-6. Reconcile Python API dependency metadata and root Turbo task coverage.
-7. Run Docker Compose startup and all test suites on a clean machine.
-8. Produce reproducible renderer benchmarks with hardware/configuration and cold/warm cache results.
+1. Remediate the 4 critical and 56 high Node dependency advisories, refresh the lockfile and verify all impacted application/render tests.
+2. Regenerate `apps/api/uv.lock` from `pyproject.toml` and rerun the API suite.
+3. Harden remote media fetching against SSRF and untrusted redirects.
+4. Isolate HTML/JS rendering in a non-root, no-credentials, no-egress sandbox with resource limits.
+5. Run the full CI workflow and fix remaining failures; maintain the dependency audit gate.
+6. Select a project licence and check third-party dependency/font/media attribution compatibility.
+7. Configure a private security-reporting channel and monitored community enforcement contact.
+8. Reconcile Python API dependency metadata and root Turbo task coverage.
+9. Run Docker Compose startup and all test suites on a clean machine.
+10. Produce reproducible renderer benchmarks with hardware/configuration and cold/warm cache results.
 
 ## Audit limitations
 
