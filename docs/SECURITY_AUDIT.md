@@ -7,7 +7,7 @@
 
 ## Summary
 
-No exposed secret value is reproduced here. This review found two high-priority hardening areas and one additional high-risk isolation area. One render-service configuration finding has been addressed in the remediation branch, but that code has not been executed or merged.
+No exposed secret value is reproduced here. The remediation branch addresses the render-service optional-auth configuration and its tests passed in CI. The first dependency audit of the workspace reports 130 advisories (4 critical, 56 high, 60 moderate, 10 low); this is a substantive unresolved blocker. SSRF-safe media fetching and browser-renderer isolation also remain open.
 
 ## Findings
 
@@ -50,6 +50,20 @@ No exposed secret value is reproduced here. This review found two high-priority 
 - Native render jobs use bounded concurrency, process cancellation, retries and output frame-count checks in inspected paths.
 
 These controls do not substitute for a full threat model or runtime test.
+
+### Critical/High — known vulnerable Node dependency graph
+
+**Evidence:** GitHub Actions run `41919145743` executed `pnpm audit --prod --audit-level high` against the current workspace lockfile. It reported **130 advisories: 4 critical, 56 high, 60 moderate and 10 low**. These are advisory findings and dependency paths, not 130 independently confirmed exploitable defects in Skyclip.
+
+Examples from the report:
+- `next@15.5.20`: Next.js critical advisories in the report include affected versions below `15.5.24` and a separate SVG image optimization advisory affecting versions through `15.5.27`; the listed patched floor for that latter advisory is `15.5.28`.
+- `fastify@5.10.0`: several high advisories list `5.12.2` as the patched floor.
+- `proxy-addr@2.0.7`: a critical advisory lists `2.0.8` as the patched floor.
+- Other findings include `undici`, `fast-uri`, `brace-expansion`, `postcss`, `sharp`, `zod` and transitive tooling dependencies.
+
+**Recommendation:** Triage the full SARIF/audit output by direct versus transitive dependency and runtime exposure. Upgrade direct dependencies within supported compatibility ranges, refresh `pnpm-lock.yaml`, and review transitive overrides individually. Run the web, render-service, editor, and media integration tests after each upgrade. Do not suppress these advisory IDs merely to make CI pass.
+
+**Status:** Unresolved. The CI dependency audit is intentionally a failing gate while high/critical findings remain.
 
 ## Checks not performed
 
