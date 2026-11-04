@@ -27,7 +27,7 @@ The bundled fonts include OFL notices in the font directory. Other dependency an
 
 ## Maintainer role
 
-**[NEEDS CONFIRMATION]** The applicant is the primary maintainer and can describe their individual authorship, design decisions, implementation scope and maintenance responsibilities. The GitHub repository owner is visible as `tarunkumarreddy87`, but this draft does not infer legal identity or the extent of contribution from repository ownership alone.
+The applicant states they are the primary developer and maintainer of Skyclip. The final application should support that role with concrete examples of personally implemented components, design decisions, commit links and ongoing maintenance responsibilities. **[NEEDS CONFIRMATION: add 2–4 representative commit/PR links and a concise account of the applicant's individual contribution.]**
 
 ## Engineering challenges
 
@@ -63,7 +63,7 @@ Codex could support maintainers and external contributors by helping:
 - No independent benchmark was run in this audit.
 - The initial production dependency audit reported 4 critical and 56 high advisories (130 total across severity levels); API tests are blocked until its uv lockfile is regenerated. These are current application-readiness blockers, not claims that dependency exploits were demonstrated.
 - User/adoption metrics, active contributors, production deployment scale, revenue, customer stories and external usage are **not established** by this repository review and must not be claimed without evidence.
-- **[NEEDS CONFIRMATION]** Maintainer's role and authorship.
+- **[NEEDS CONFIRMATION]** Representative commit/PR evidence and a concise explanation of the applicant's individual authorship and design decisions.
 - **[NEEDS CONFIRMATION]** Intended public licence and the scope of components/assets being licensed.
 - **[NEEDS CONFIRMATION]** Product status and whether external contributions are currently accepted.
 - **[NEEDS CONFIRMATION]** Any public users, deployments or benchmark results that the applicant intends to cite.
