@@ -11,6 +11,13 @@ This roadmap is source-derived. It does not imply that issues have been created 
 - **Acceptance criteria:** `pnpm audit --prod --audit-level high` exits successfully; no high/critical advisories remain or each exception has a documented, risk-reviewed temporary waiver.
 - **Testing:** Run affected web/editor/render-service builds and tests after every dependency group update.
 
+### Remediate Python dependency advisories
+- **Problem:** `pip-audit` reports 8 advisory entries in the orchestrator/media environments: AnyIO 4.14.1 (fix 4.14.2), Certifi 2026.6.17 (fix 2026.10.18), and urllib3 2.7.0 (fix 2.8.0).
+- **Relevant files:** `workers/orchestrator/pyproject.toml`, `workers/orchestrator/uv.lock`, `workers/media/pyproject.toml`, `workers/media/uv.lock`, transitive dependency constraints.
+- **Expected behavior:** Lockfiles resolve to patched compatible releases and internal editable packages are separately reviewed.
+- **Acceptance criteria:** `pip-audit` reports no known high-severity advisories in installed environments, or any exception has an explicitly accepted time-limited risk rationale.
+- **Testing:** Run orchestrator/media pytest suites and relevant rendering tests after lock refresh.
+
 ### Regenerate the API dependency lock
 - **Problem:** `apps/api` CI setup fails because `uv.lock` is stale relative to `pyproject.toml`.
 - **Relevant files:** `apps/api/pyproject.toml`, `apps/api/uv.lock`.
@@ -50,10 +57,10 @@ This roadmap is source-derived. It does not imply that issues have been created 
 - **Testing:** `docker compose --env-file .env.example -f infrastructure/docker-compose.yml config` (or an equivalent sanitized env check).
 
 ### Continuous integration
-- **Baseline issue:** No GitHub Actions workflow existed. The remediation branch adds CI, with several checks verified but two known gates currently failing (API lockfile and Node advisories).
+- **Baseline issue:** No GitHub Actions workflow existed. The remediation branch adds CI. Verified checks include Node typecheck/build/unit suites, orchestrator tests, Compose validation and Gitleaks. Known blockers include the stale API lockfile, Node advisories, Python AnyIO/Certifi/urllib3 advisories, and media-worker renderer test failures from the first no-Chromium run; the Chromium-enabled rerun is pending.
 - **Relevant files:** `.github/workflows/`, root package scripts and individual package manifests.
 - **Expected behavior:** Clean checkout installs dependencies and runs Python tests, TypeScript type checks/build/tests, and security/dependency checks.
-- **Current evidence:** video-engine, render-service and web checks passed; orchestrator tests passed; Compose and Gitleaks passed. API tests are blocked by a stale lockfile, media tests remain pending, and dependency audit reports high/critical advisories.
+- **Current evidence:** video-engine, render-service and web checks passed; orchestrator tests passed; Compose and Gitleaks passed. API tests are blocked by a stale lockfile; the prior media run had 46 passing and 2 failing tests due to absent Chromium; npm and Python dependency audits report known advisories.
 - **Acceptance criteria:** CI is green on a clean runner; optional system-dependent integration tests are clearly marked.
 - **Testing:** GitHub Actions pull_request and push runs.
 
