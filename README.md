@@ -175,13 +175,13 @@ pnpm --filter @hanuman/render-service test
 pnpm --filter @hanuman/web typecheck
 
 # Python API
-cd apps/api && uv sync --locked --extra dev && uv run pytest
+(cd apps/api && uv sync --locked --extra dev && uv run pytest)
 
 # Temporal orchestrator
-cd workers/orchestrator && uv sync --locked --group dev && uv run pytest
+(cd workers/orchestrator && uv sync --locked --group dev && uv run pytest)
 
 # Media worker (FFmpeg/ffprobe required for export tests)
-cd workers/media && uv sync --locked --extra dev && uv run pytest
+(cd workers/media && uv sync --locked --extra dev && uv run pytest)
 ~~~
 
 Some export/template tests require FFmpeg, ffprobe, browser binaries or local runtime dependencies; inspect skip reasons and test output. No complete test coverage percentage is asserted.
