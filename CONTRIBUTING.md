@@ -13,11 +13,11 @@ Thank you for considering a contribution. Skyclip is a multi-runtime monorepo; k
 
 Requirements currently described by the repository:
 - Docker Desktop / Docker Compose v2
-- Node.js 20+ and pnpm 9
+- Node.js 20+ and pnpm 9.15
 - Python 3.12+ and uv
 - FFmpeg and ffprobe for media-worker tests and local export
 
-The root quick start currently references a missing root `.env.example`. Until that is added, copy the required values from `infrastructure/docker-compose.yml` and the relevant application config; do not use production credentials. The web-specific variables are listed in [apps/web/.env.example](./apps/web/.env.example).
+Copy the root `.env.example` to `.env` and review the local-only settings before starting Compose. The sample Supabase values are placeholders; use a Supabase project you control for working authentication. Never use the development template in production. Web-specific MongoDB and payment-provider variables are listed in [apps/web/.env.example](./apps/web/.env.example).
 
 Install Node workspace dependencies:
 
@@ -30,7 +30,7 @@ Install Python service dependencies:
 ```bash
 cd apps/api && uv sync --group dev
 cd ../../workers/orchestrator && uv sync --group dev
-cd ../media && uv sync --group dev
+cd ../media && uv sync --extra dev
 ```
 
 Start services using the repository Makefile only after configuring a local-only environment. See [docs/runbooks/local-dev.md](./docs/runbooks/local-dev.md).
@@ -52,10 +52,13 @@ pnpm --filter @hanuman/render-service typecheck
 cd workers/media && uv run pytest
 
 # API
-cd apps/api && uv run pytest
+cd apps/api && uv sync --extra dev && uv run pytest
+
+# Temporal orchestrator
+cd workers/orchestrator && uv sync --group dev && uv run pytest
 ```
 
-The root workspace currently exposes Turbo build/lint/typecheck scripts; package support differs. Do not report a check as passing unless it was executed. Rendering tests may require FFmpeg/ffprobe and Chromium; tests should skip explicitly when a documented system dependency is unavailable.
+The root workspace exposes Turbo build/lint/typecheck scripts; package support differs. The CI workflow runs the checks defined for each current package. Do not report a check as passing unless it was executed. Rendering tests may require FFmpeg/ffprobe and Chromium; tests should skip explicitly when a documented system dependency is unavailable.
 
 ## Branches and commits
 
