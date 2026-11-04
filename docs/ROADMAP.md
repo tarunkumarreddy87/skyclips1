@@ -42,16 +42,18 @@ This roadmap is source-derived. It does not imply that issues have been created 
 ## P1 — contributor experience
 
 ### Root environment template
-- **Problem:** Main README quick start calls for a root `.env.example`, which is missing.
+- **Baseline issue:** Main README quick start called for a root `.env.example`, which was missing. The remediation branch adds a local-only root template.
 - **Relevant files:** `README.md`, `infrastructure/docker-compose.yml`, service config modules.
 - **Expected behavior:** A complete root template documents every variable needed for local Compose with safe placeholders and local-only defaults.
-- **Acceptance criteria:** `cp .env.example .env` works; compose config validates; no real secrets appear.
+- **Current evidence:** Compose configuration validation passed in CI with the new sample. Supabase placeholder values remain non-functional; test real auth only with a project you control.
+- **Acceptance criteria:** `cp .env.example .env` works for local configuration; compose config validates; no real secrets appear.
 - **Testing:** `docker compose --env-file .env.example -f infrastructure/docker-compose.yml config` (or an equivalent sanitized env check).
 
 ### Continuous integration
-- **Problem:** No GitHub Actions workflow currently runs checks on pull requests.
+- **Baseline issue:** No GitHub Actions workflow existed. The remediation branch adds CI, with several checks verified but two known gates currently failing (API lockfile and Node advisories).
 - **Relevant files:** `.github/workflows/`, root package scripts and individual package manifests.
 - **Expected behavior:** Clean checkout installs dependencies and runs Python tests, TypeScript type checks/build/tests, and security/dependency checks.
+- **Current evidence:** video-engine, render-service and web checks passed; orchestrator tests passed; Compose and Gitleaks passed. API tests are blocked by a stale lockfile, media tests remain pending, and dependency audit reports high/critical advisories.
 - **Acceptance criteria:** CI is green on a clean runner; optional system-dependent integration tests are clearly marked.
 - **Testing:** GitHub Actions pull_request and push runs.
 
