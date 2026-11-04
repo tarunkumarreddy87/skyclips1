@@ -25,3 +25,13 @@ const envSchema = z.object({
 
 export type AppConfig = z.infer<typeof envSchema>;
 export const config = envSchema.parse(process.env);
+
+/**
+ * Container images run as production. Local TypeScript development can use
+ * an internal network without this key, but production must fail closed.
+ */
+export function assertSecureConfiguration(value: AppConfig): void {
+  if (value.NODE_ENV === "production" && !(value.RENDER_SERVICE_API_KEY ?? "").trim()) {
+    throw new Error("RENDER_SERVICE_API_KEY must be set before the render service can start in production");
+  }
+}

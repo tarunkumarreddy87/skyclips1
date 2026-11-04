@@ -1,0 +1,164 @@
+name: CI
+
+on:
+  push:
+    branches: [main, "oss-readiness/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  node:
+    name: Node workspace checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium for renderer tests
+        run: pnpm --filter @hanuman/render-service exec playwright install --with-deps chromium
+      - name: Video engine typecheck and tests
+        run: |
+          pnpm --filter @hanuman/video-engine typecheck
+          pnpm --filter @hanuman/video-engine test
+      - name: Render service typecheck, build and tests
+        run: |
+          pnpm --filter @hanuman/render-service typecheck
+          pnpm --filter @hanuman/render-service build
+          pnpm --filter @hanuman/render-service test
+      - name: Web typecheck and editor tests
+        run: |
+          pnpm --filter @hanuman/web typecheck
+          pnpm --filter @hanuman/web test:editor
+
+  python:
+    name: Python tests - ${{ matrix.project }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: API
+            directory: apps/api
+            sync_args: --extra dev
+          - project: Orchestrator
+            directory: workers/orchestrator
+            sync_args: --group dev
+          - project: Media worker
+            directory: workers/media
+            sync_args: --extra dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+      - name: Install FFmpeg
+        if: matrix.project == 'Media worker'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Install Node runtime for native media graphics
+        if: matrix.project == 'Media worker'
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - name: Configure Node
+        if: matrix.project == 'Media worker'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install Node workspace dependencies
+        if: matrix.project == 'Media worker'
+        run: pnpm install --frozen-lockfile
+      - name: Install Playwright Chromium for media export tests
+        if: matrix.project == 'Media worker'
+        run: pnpm --filter @hanuman/render-service exec playwright install --with-deps chromium
+      - name: Sync Python environment
+        working-directory: ${{ matrix.directory }}
+        run: uv sync --locked ${{ matrix.sync_args }}
+      - name: Run Python tests
+        working-directory: ${{ matrix.directory }}
+        run: uv run --no-sync pytest
+
+  compose-config:
+    name: Validate local Compose configuration
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose interpolation
+        run: docker compose --env-file .env.example -f infrastructure/docker-compose.yml config --quiet
+
+  dependency-audit:
+    name: Dependency vulnerability audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - name: Install Node dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Audit production npm dependencies
+        run: pnpm audit --prod --audit-level high
+  python-dependency-audit:
+    name: Python dependency audit - ${{ matrix.project }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: API
+            directory: apps/api
+          - project: Orchestrator
+            directory: workers/orchestrator
+          - project: Media worker
+            directory: workers/media
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+      - name: Install production Python dependencies from lock
+        working-directory: ${{ matrix.directory }}
+        run: uv sync --locked --no-dev
+      - name: Audit installed Python dependencies
+        working-directory: ${{ matrix.directory }}
+        run: uvx pip-audit --path "$(uv run --no-sync python -c 'import site; print(site.getsitepackages()[0])')"
+
+  secret-scan:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan repository history for secrets
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
