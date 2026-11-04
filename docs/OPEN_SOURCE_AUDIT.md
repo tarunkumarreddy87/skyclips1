@@ -10,7 +10,7 @@
 
 The repository contains a substantial monorepo: a Next.js application, FastAPI API, Temporal orchestrator and media worker, a TypeScript native render service, shared types/timeline schema, migrations, and several existing test suites. It has a meaningful custom rendering implementation. The video engine is not a replacement for FFmpeg: Skyclip owns timeline evaluation, SVG graphics composition, animation/keyframe evaluation, text layout, templates and audio-cue planning; FFmpeg remains central to media decode, filters, transitions, audio mixing, section/final assembly and encoding.
 
-**Baseline readiness: Needs significant work.** The baseline lacked a repository-level licence, governance files, CI workflows and a root environment template. The remediation branch adds the missing onboarding/governance documentation, a local environment template, a CI workflow and a production fail-closed render-service API-key check. These additions are not yet merged and the workflow has not run. The remaining security concerns—SSRF-safe media ingestion and browser-renderer isolation—need engineering work.
+**Current readiness: Not yet ready for an external contributor launch or a clean application-readiness claim.** The remediation branch includes an Apache-2.0 `LICENSE`, onboarding/governance drafts, root local environment template, CI workflow, and a production fail-closed render-service API-key check. The branch remains unmerged. The latest checked CI run failed overall; API lockfile/tests and dependency audits remain blockers. SSRF-safe media ingestion, browser-renderer isolation, third-party rights review, and operational reporting contacts still require work or maintainer confirmation.
 
 ## Repository facts observed on main
 
