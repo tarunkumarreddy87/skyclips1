@@ -58,9 +58,10 @@ Codex could support maintainers and external contributors by helping:
 ## Evidence and missing information
 
 - Repository contains existing tests across API, rendering service, media worker, orchestrator and video engine; test pass status was not established in this audit.
-- No GitHub Actions workflows were present at the audited ref.
+- No GitHub Actions workflows were present at the audited baseline ref. The remediation branch adds CI; the first successful checks include 23/23 video-engine tests, 18 render-service tests passed with 2 skipped, 3/3 editor round-trip tests, successful render-service typecheck/build and web typecheck, successful orchestrator tests, and successful Compose/Gitleaks checks.
 - No licence or repository-level contributor/security governance files were present at the audited ref.
 - No independent benchmark was run in this audit.
+- The initial production dependency audit reported 4 critical and 56 high advisories (130 total across severity levels); API tests are blocked until its uv lockfile is regenerated. These are current application-readiness blockers, not claims that dependency exploits were demonstrated.
 - User/adoption metrics, active contributors, production deployment scale, revenue, customer stories and external usage are **not established** by this repository review and must not be claimed without evidence.
 - **[NEEDS CONFIRMATION]** Maintainer's role and authorship.
 - **[NEEDS CONFIRMATION]** Intended public licence and the scope of components/assets being licensed.
