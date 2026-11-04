@@ -45,7 +45,7 @@ No confirmed critical vulnerability was established by this static inspection. R
 ### Medium
 
 1. **CI is newly added and partially verified.**  
-   The baseline had no workflows. Run `41919145743` shows Compose validation and Gitleaks passing; video-engine tests 23/23; render-service tests 18 passed and 2 skipped; render-service typecheck/build passed; web typecheck passed and editor round-trip tests 3/3; orchestrator tests passed. The media-worker suite completed with 46 passed and 2 failed: both failures were in the Three.js export path because Playwright Chromium was absent from the GitHub runner, with a related cancellation/fallback-file assertion. The workflow now installs Playwright Chromium in both the Node renderer and media-worker jobs; those changes require a fresh passing CI run. API tests are blocked before pytest because its lockfile is stale. The dependency audit exits non-zero on the reported high/critical advisories.
+   The baseline had no workflows. Run `41919145743` shows Compose validation and Gitleaks passing; video-engine tests 23/23; render-service tests 18 passed and 2 skipped; render-service typecheck/build passed; web typecheck passed and editor round-trip tests 3/3; orchestrator tests passed. The media-worker suite on the earlier run completed with 46 passed and 2 failed: both failures were in the Three.js export path because Playwright Chromium was absent from the GitHub runner, with a related cancellation/fallback-file assertion. The workflow now installs Playwright Chromium in both the Node renderer and media-worker jobs; a fresh post-change run has been triggered but has not yet completed. API tests are blocked before pytest because its lockfile is stale. The dependency audits exit non-zero on reported advisories.
 
 2. **A root development environment template is newly added on the remediation branch.**  
    The baseline README quick start referenced a missing root `.env.example`. The remediation branch adds one with local development placeholders. Supabase placeholders are not working credentials; a user-owned Supabase project is required for real authentication.
@@ -56,28 +56,31 @@ No confirmed critical vulnerability was established by this static inspection. R
 4. **Contributor and security governance files were absent at baseline and have been drafted on the remediation branch.**  
    The new Code of Conduct and Security Policy contain explicit maintainer-confirmation placeholders for a monitored contact/reporting channel; these must be resolved before inviting community reports.
 
-5. **API dependency lock is stale.**
+5. **Python dependencies contain known advisories (confirmed by pip-audit).**
+   The orchestrator/media environments report 8 advisories across AnyIO 4.14.1 (3, fix 4.14.2), Certifi 2026.6.17 (1, fix 2026.10.18), and urllib3 2.7.0 (3, fix 2.8.0). The advisory count includes repeat package/advisory entries as reported by pip-audit. Internal editable packages are skipped by the PyPI-based audit and require separate source review.
+
+6. **API dependency lock is stale.**
    The CI `uv sync --locked --extra dev` step for `apps/api` fails with `uv.lock needs to be updated`. Regenerate and commit the lock using the repository's current `pyproject.toml`; do not remove `--locked` from CI as a workaround.
 
-6. **No consistent formatting/lint configuration.**
+7. **No consistent formatting/lint configuration.**
    The repository does not have a consistent formatter/linter command that CI can run across all workspaces. The new CI currently validates types, tests, builds and security but does not claim formatting/lint checks. Adopt per-language tools only after choosing and documenting project conventions.
 
-7. **Project identity is inconsistent in historical files.**  
+8. **Project identity is inconsistent in historical files.**  
    Root README and the docs index now use Skyclip as the public-facing name, while internal npm/Python package identifiers and historical ADRs still use HANUMAN. These identifiers were not globally renamed because doing so could affect imports and deployment contracts.
 
-8. **Root workspace scripts reference tasks that packages may not implement.**  
+9. **Root workspace scripts reference tasks that packages may not implement.**  
    Root `package.json` exposes Turbo `build`, `lint`, and `typecheck`, but the inspected `packages/video-engine/package.json` defines only `typecheck` and `test`; `render-service` defines `build`, `typecheck`, and `test`. Confirm task availability across all workspace packages and add explicit root test orchestration.
 
-9. **Conflicting/legacy dependency declarations.**  
+10. **Conflicting/legacy dependency declarations.**  
    The API has `pyproject.toml` and a separate `requirements.txt`; they do not list exactly the same packages (for example, Alembic is in pyproject but absent from requirements). Document the canonical install path or keep them synchronized.
 
-10. **Package metadata remains private.**  
+11. **Package metadata remains private.**  
    `packages/video-engine`, `render-service`, and root package metadata use `private: true`. This may be intentional for an integrated application, but it means those packages are not currently published as public npm packages.
 
-11. **Benchmark evidence is not an external reproducible report.**  
+12. **Benchmark evidence is not an external reproducible report.**  
    The repository contains proof media/metric artifacts, and the ADR correctly says there is no measured basis for comparative speed claims. The benchmark plan was added to the branch, but no new benchmark was executed.
 
-12. **Docker image dependency reproducibility needs review.**  
+13. **Docker image dependency reproducibility needs review.**  
     Compose uses mutable tags such as `minio/minio:latest` and `minio/mc:latest`. Pin supported versions or digests for repeatable contributor setup.
 
 ### Low
@@ -120,11 +123,11 @@ Existing tests include:
 - `workers/orchestrator/tests/` for pipeline/workflow activities.
 - `apps/api/tests/` for API routes/services.
 
-**Static audit tests were not run in a local checkout.** CI did execute multiple suites on the remediation branch: video engine 23/23 passed; render service 18 passed and 2 skipped; web editor round-trip 3/3 passed; orchestrator suite passed. Media-worker pytest was still running when this document was updated; API pytest did not start because `uv sync --locked` detected a stale lockfile. No coverage percentage is claimed.
+**Static audit tests were not run in a local checkout.** CI executed: video engine 23/23 passed; render service 18 passed and 2 skipped; web editor round-trip 3/3 passed; orchestrator suite passed. The earlier media-worker run reported 46 passed and 2 failed because Chromium was absent; the CI definition now installs Chromium for this suite and the rerun was pending at the time of this update. API pytest did not start because `uv sync --locked` detected a stale lockfile. No coverage percentage is claimed.
 
 ## Remaining remediation order
 
-1. Remediate the 4 critical and 56 high Node dependency advisories, refresh the lockfile and verify all impacted application/render tests.
+1. Remediate the 4 critical and 56 high Node advisories and 8 reported Python advisories, refresh their lockfiles and rerun affected suites.
 2. Regenerate `apps/api/uv.lock` from `pyproject.toml` and rerun the API suite.
 3. Harden remote media fetching against SSRF and untrusted redirects.
 4. Isolate HTML/JS rendering in a non-root, no-credentials, no-egress sandbox with resource limits.
@@ -137,4 +140,4 @@ Existing tests include:
 
 ## Audit limitations
 
-This is a source-level review of a single baseline ref plus a proposed remediation branch. It does not prove the deployed environment, current secrets state, full dependency advisories, every file's correctness, actual output quality, or test/build status. Gitleaks, dependency scans, and runtime tests are defined in the branch but have not executed. Re-run those checks before release.
+This is a source-level review of a single baseline ref plus a proposed remediation branch. It does not prove the deployed environment, current secrets state, full dependency advisories, every file's correctness, actual output quality, or test/build status. Gitleaks and several test suites have run in CI; dependency audits found advisories and media/API checks remain incomplete. Re-run the full matrix after fixes before release.
