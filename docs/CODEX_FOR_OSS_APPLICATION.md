@@ -21,7 +21,7 @@ The engine integrates rather than replaces FFmpeg. FFmpeg is used for media deco
 
 ## Open-source components
 
-The repository includes source for the application and supporting rendering packages, plus tests and architecture decision records. **The repository has no root licence at the audited commit. It must not be described as legally open source until the maintainer chooses and adds a licence after reviewing third-party assets/dependencies and rights.**
+The repository includes source for the application and supporting rendering packages, plus tests and architecture decision records. The remediation branch contains a root `LICENSE` file with Apache License, Version 2.0. Confirm that the maintainer has authority to license all project-authored code under Apache-2.0, and complete a third-party dependency, font, media and asset notice review before making broader rights claims.
 
 The bundled fonts include OFL notices in the font directory. Other dependency and media-asset licensing requires a complete inventory.
 
@@ -53,18 +53,18 @@ Codex could support maintainers and external contributors by helping:
 
 ## Contributor support plan
 
-**[NEEDS CONFIRMATION]** Describe the intended contributor workflow, review turnaround, maintainer availability, and how Codex-generated changes will be reviewed and tested before merge.
+**[NEEDS CONFIRMATION]** Describe the intended contributor workflow, realistic review turnaround, maintainer availability, and how Codex-generated changes will be reviewed and tested before merge.
 
 ## Evidence and missing information
 
 - Repository contains existing tests across API, rendering service, media worker, orchestrator and video engine; test pass status was not established in this audit.
 - No GitHub Actions workflows were present at the audited baseline ref. The remediation branch adds CI; the first successful checks include 23/23 video-engine tests, 18 render-service tests passed with 2 skipped, 3/3 editor round-trip tests, successful render-service typecheck/build and web typecheck, successful orchestrator tests, and successful Compose/Gitleaks checks.
-- No licence or repository-level contributor/security governance files were present at the audited ref.
+- The baseline had no root licence or repository-level contributor/security governance files. The remediation branch now includes Apache-2.0 `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md` and `CODE_OF_CONDUCT.md`; security and conduct reporting contacts remain unconfigured.
 - No independent benchmark was run in this audit.
 - The Node production dependency audit reported 130 advisories (4 critical, 56 high, 60 moderate and 10 low). The Python audit reported 8 advisories across AnyIO, Certifi and urllib3 in the orchestrator/media environments. API tests are blocked until its uv lockfile is regenerated. The earlier media suite had 46 passed and 2 failed because Chromium was missing; the workflow now installs Chromium and a rerun is pending. These are current application-readiness blockers, not claims that dependency exploits were demonstrated.
 - User/adoption metrics, active contributors, production deployment scale, revenue, customer stories and external usage are **not established** by this repository review and must not be claimed without evidence.
 - **[NEEDS CONFIRMATION]** Representative commit/PR evidence and a concise explanation of the applicant's individual authorship and design decisions.
-- **[NEEDS CONFIRMATION]** Intended public licence and the scope of components/assets being licensed.
+- **[NEEDS CONFIRMATION]** Confirm maintainer authority to license project-authored code under Apache-2.0; inventory and attribute third-party code, fonts, media, datasets and other assets.
 - **[NEEDS CONFIRMATION]** Product status and whether external contributions are currently accepted.
 - **[NEEDS CONFIRMATION]** Any public users, deployments or benchmark results that the applicant intends to cite.
 
