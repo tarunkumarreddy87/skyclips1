@@ -122,12 +122,34 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Audit production npm dependencies
         run: pnpm audit --prod --audit-level high
-      - name: Audit Python environments
-        run: |
-          python -m pip install --upgrade pip uv
-          for project in apps/api workers/orchestrator workers/media; do
-            (cd "$project" && uv sync --locked --no-dev && uvx pip-audit --path "$(uv run --no-sync python -c 'import site; print(site.getsitepackages()[0])')")
-          done
+  python-dependency-audit:
+    name: Python dependency audit - ${{ matrix.project }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - project: API
+            directory: apps/api
+          - project: Orchestrator
+            directory: workers/orchestrator
+          - project: Media worker
+            directory: workers/media
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+      - name: Install production Python dependencies from lock
+        working-directory: ${{ matrix.directory }}
+        run: uv sync --locked --no-dev
+      - name: Audit installed Python dependencies
+        working-directory: ${{ matrix.directory }}
+        run: uvx pip-audit --path "$(uv run --no-sync python -c 'import site; print(site.getsitepackages()[0])')"
 
   secret-scan:
     name: Secret scanning
