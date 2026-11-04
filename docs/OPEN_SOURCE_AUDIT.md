@@ -10,7 +10,7 @@
 
 The repository contains a substantial monorepo: a Next.js application, FastAPI API, Temporal orchestrator and media worker, a TypeScript native render service, shared types/timeline schema, migrations, and several existing test suites. It has a meaningful custom rendering implementation. The video engine is not a replacement for FFmpeg: Skyclip owns timeline evaluation, SVG graphics composition, animation/keyframe evaluation, text layout, templates and audio-cue planning; FFmpeg remains central to media decode, filters, transitions, audio mixing, section/final assembly and encoding.
 
-**Current readiness: Not yet ready for an external contributor launch or a clean application-readiness claim.** The remediation branch includes an Apache-2.0 `LICENSE`, onboarding/governance drafts, root local environment template, CI workflow, and a production fail-closed render-service API-key check. The branch remains unmerged. The latest checked CI run failed overall; API lockfile/tests and dependency audits remain blockers. SSRF-safe media ingestion, browser-renderer isolation, third-party rights review, and operational reporting contacts still require work or maintainer confirmation.
+**Current readiness: Not yet ready for an external contributor launch or a clean application-readiness claim.** The remediation branch includes an Apache-2.0 `LICENSE`, onboarding/governance drafts, root local environment template, CI workflow, and a production fail-closed render-service API-key check. The branch remains unmerged. The latest checked CI run (41922494956) failed overall. Node workspace checks, media-worker tests, orchestrator tests, Compose validation and Gitleaks passed; API tests did not start because the API lockfile is stale; dependency audits remain failing. Static source inspection found a public-only, DNS-pinned, bounded HTTPS downloader for opt-in web image sourcing, but a separate media-worker manifest staging path still downloads arbitrary HTTP(S) URLs via urllib without equivalent SSRF controls. Browser-renderer isolation, third-party rights review, and operational reporting contacts remain unresolved.
 
 ## Repository facts observed on main
 
@@ -36,8 +36,8 @@ No confirmed critical vulnerability was established by this static inspection. R
 2. **Render-service authentication was optional on the baseline (remediated in this branch and verified by CI).**  
    At the audited ref, `render-service/src/api/routes.ts` skipped key verification when `RENDER_SERVICE_API_KEY` was empty. The remediation branch now asserts a non-empty key at production service startup, and the container image sets `NODE_ENV=production`. A focused regression suite passed in CI (production missing/blank key is rejected; configured key is accepted; development/test remain usable). Deployments must supply a strong key.
 
-3. **Remote media fetch can access arbitrary URLs (potential SSRF; confirmed code path, exploitability depends on manifest trust boundary).**  
-   `workers/media/src/render/native_pipeline.py::stage_assets` calls `urllib.request.urlopen(src)` for HTTP(S) media without an evident scheme/host/IP allowlist or redirect revalidation. If a caller can cause a manifest to contain attacker-controlled URLs, the worker may reach internal services or cloud metadata endpoints. Add an allowlist/egress policy, reject loopback/private/link-local/reserved IPs after DNS resolution, revalidate redirects, and use size/time limits. Confirm all routes that can populate timeline source URLs before release.
+3. **Manifest media staging still has a potential SSRF path (source confirmed; exploitability depends on manifest trust boundary).**  
+   `workers/media/src/render/native_pipeline.py::stage_assets` uses `urllib.request.urlopen(src)` for manifest-provided HTTP(S) media, with no visible public-IP validation, redirect revalidation, response-size cap, or DNS pinning in that code path. An attacker-controlled manifest URL could target internal services or cloud metadata if the worker can reach them. This is distinct from `workers/orchestrator/src/clients/web_media.py`, whose opt-in web-image downloader already validates public addresses, pins the connection IP, checks redirects, observes robots rules and bounds response size/time. Apply comparable controls to the media-worker path and add adversarial tests before declaring SSRF mitigation complete.
 
 4. **Untrusted HTML/JavaScript template execution requires a hardened sandbox (high risk, not confirmed exploitable).**  
    `render-service/src/native/validate-template.ts` and `render-html.ts` run template JavaScript in Chromium/Playwright. Request size/duration are bounded and browser network routing is restricted in the inspected process, but browser process isolation, OS sandbox/container privileges, CPU/memory limits and denial-of-service resistance require deployment verification. Never treat a browser route filter as a complete hostile-code sandbox. Consider running this renderer as a non-root user in a separately constrained container with no credentials and no network egress.
@@ -50,11 +50,11 @@ No confirmed critical vulnerability was established by this static inspection. R
 2. **A root development environment template is newly added on the remediation branch.**  
    The baseline README quick start referenced a missing root `.env.example`. The remediation branch adds one with local development placeholders. Supabase placeholders are not working credentials; a user-owned Supabase project is required for real authentication.
 
-3. **No repository licence has been selected.**  
-   Public visibility does not grant reuse rights. The remediation branch deliberately does not add a licence. The maintainer must select one after reviewing source, dependencies, fonts, media and other third-party rights.
+3. **Apache-2.0 is present on the remediation branch; rights confirmation is outstanding.**  
+   The branch contains a root `LICENSE` with Apache License 2.0. Public visibility does not grant reuse rights. The maintainer must confirm authority to license all project-authored code under Apache-2.0 and review dependency, font, media and other third-party rights/notices before making broader licensing claims.
 
 4. **Contributor and security governance files were absent at baseline and have been drafted on the remediation branch.**  
-   The new Code of Conduct and Security Policy contain explicit maintainer-confirmation placeholders for a monitored contact/reporting channel; these must be resolved before inviting community reports.
+   The new Code of Conduct and Security Policy contain explicit maintainer-confirmation placeholders for a monitored contact/reporting channel; configure a real, monitored address/contact and identify the enforcement owner before inviting community reports.
 
 5. **Python dependencies contain known advisories (confirmed by pip-audit).**
    The orchestrator/media environments report 8 advisories across AnyIO 4.14.1 (3, fix 4.14.2), Certifi 2026.6.17 (1, fix 2026.10.18), and urllib3 2.7.0 (3, fix 2.8.0). The advisory count includes repeat package/advisory entries as reported by pip-audit. Internal editable packages are skipped by the PyPI-based audit and require separate source review.
@@ -127,9 +127,9 @@ Existing tests include:
 
 ## Remaining remediation order
 
-1. Remediate the 4 critical and 56 high Node advisories and 8 reported Python advisories, refresh their lockfiles and rerun affected suites.
-2. Regenerate `apps/api/uv.lock` from `pyproject.toml` and rerun the API suite.
-3. Harden remote media fetching against SSRF and untrusted redirects.
+1. Regenerate `apps/api/uv.lock` from `pyproject.toml` and rerun the API suite.
+2. Triage Node and Python dependency advisories, upgrade affected packages/lockfiles and rerun affected suites; retain the audit gates.
+3. Harden the media-worker manifest URL fetch path against SSRF (DNS/IP validation, pinned connections, redirect revalidation, byte/time limits and egress restrictions). Keep tests for the existing opt-in web-media downloader.
 4. Isolate HTML/JS rendering in a non-root, no-credentials, no-egress sandbox with resource limits.
 5. Run the full CI workflow and fix remaining failures; maintain the dependency audit gate.
 6. Select a project licence and check third-party dependency/font/media attribution compatibility.
