@@ -19,7 +19,7 @@ No exposed secret value is reproduced here. The remediation branch addresses the
 
 **Remediation in this branch:** `render-service/src/config.ts` now exports a startup security assertion. `render-service/src/index.ts` invokes it before registering routes or listening; production startup fails when the API key is absent or whitespace-only. The render-service Dockerfile sets `NODE_ENV=production`. A test covers missing, whitespace-only and configured keys, plus local development/test modes. The render-service README documents the deployment requirement.
 
-**Status:** Code and test added on the remediation branch. They have **not** been executed in CI or a local runtime and are not yet merged. Every deployment using the container image must configure `RENDER_SERVICE_API_KEY`; otherwise startup now fails by design. Direct local TypeScript development remains in development mode.
+**Status:** Code and focused tests passed in CI on the remediation branch. The change is not yet merged. This verifies the startup assertion unit behavior, not a full deployment penetration test. Every deployment using the container image must configure `RENDER_SERVICE_API_KEY`; otherwise startup now fails by design. Direct local TypeScript development remains in development mode.
 
 ### High — user-influenced remote media URL staging may enable SSRF
 
@@ -68,9 +68,9 @@ Examples from the report:
 ## Checks not performed
 
 - Git history secret scanning and secret provider validation.
-- Full dependency CVE/advisory scan.
+- Full Python dependency CVE/advisory scan (the CI job stops after the npm audit failure; the `pip-audit` step is skipped).
 - Authentication and authorization integration tests against a running stack.
 - SSRF, path traversal, command injection, upload abuse, resource exhaustion and browser sandbox penetration tests.
 - Production cloud IAM, object-store policy, network ACL and deployment ingress review.
 
-The CI definition added on the remediation branch includes Gitleaks, npm audit and pip-audit steps, but their results are pending an actual workflow run. Do not state that the repository is free of secrets or vulnerabilities until those checks are completed.
+The CI definition added on the remediation branch includes Gitleaks, npm audit and pip-audit. Gitleaks passed on the latest push-triggered run; npm audit executed and found 130 advisories; pip-audit did not run because the Node audit step failed first. Do not state that the repository is free of secrets or vulnerabilities.
