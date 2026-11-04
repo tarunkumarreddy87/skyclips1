@@ -28,9 +28,9 @@ pnpm install
 Install Python service dependencies:
 
 ```bash
-cd apps/api && uv sync --group dev
-cd ../../workers/orchestrator && uv sync --group dev
-cd ../media && uv sync --extra dev
+(cd apps/api && uv sync --extra dev)
+(cd workers/orchestrator && uv sync --group dev)
+(cd workers/media && uv sync --extra dev)
 ```
 
 Start services using the repository Makefile only after configuring a local-only environment. See [docs/runbooks/local-dev.md](./docs/runbooks/local-dev.md).
@@ -49,13 +49,13 @@ pnpm --filter @hanuman/render-service test
 pnpm --filter @hanuman/render-service typecheck
 
 # Python media worker
-cd workers/media && uv run pytest
+(cd workers/media && uv sync --extra dev && uv run pytest)
 
 # API
-cd apps/api && uv sync --extra dev && uv run pytest
+(cd apps/api && uv run pytest)
 
 # Temporal orchestrator
-cd workers/orchestrator && uv sync --group dev && uv run pytest
+(cd workers/orchestrator && uv run pytest)
 ```
 
 The root workspace exposes Turbo build/lint/typecheck scripts; package support differs. The CI workflow runs the checks defined for each current package. Do not report a check as passing unless it was executed. Rendering tests may require FFmpeg/ffprobe and Chromium; tests should skip explicitly when a documented system dependency is unavailable.
