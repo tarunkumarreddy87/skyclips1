@@ -8,7 +8,7 @@ Security fixes are currently intended for the default branch. **[NEEDS CONFIRMAT
 
 Please do not report exploitable vulnerabilities in public issues or pull requests.
 
-**[NEEDS CONFIRMATION: configure a private reporting channel before inviting reports.]** Recommended option: enable GitHub Security Advisories / private vulnerability reporting for this repository and use the repository's **Security → Advisories → Report a vulnerability** flow. Do not send credentials, exploit payloads containing real user data, or customer media in public discussions.
+Until GitHub private vulnerability reporting is enabled and monitored, do not solicit security reports through this policy. Once enabled, use the repository's **Security → Advisories → Report a vulnerability** flow. Do not send credentials, exploit payloads containing real user data, or customer media in public discussions.
 
 When reporting, include the affected commit/version, impact, reproduction steps, prerequisites, and a safe proof of concept. Redact all secrets and personal data.
 
