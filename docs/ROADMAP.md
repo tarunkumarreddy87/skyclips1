@@ -4,6 +4,20 @@ This roadmap is source-derived. It does not imply that issues have been created 
 
 ## P0 — security and release gates
 
+### Remediate dependency vulnerabilities
+- **Problem:** Current workspace audit reports 4 critical and 56 high advisories (130 total across severity levels); examples include Next.js, Fastify and proxy-addr.
+- **Relevant files:** `apps/web/package.json`, `render-service/package.json`, `pnpm-lock.yaml`, dependency package manifests.
+- **Expected behavior:** Upgrade compatible direct dependencies and refresh transitive dependencies without broad, unexplained suppressions.
+- **Acceptance criteria:** `pnpm audit --prod --audit-level high` exits successfully; no high/critical advisories remain or each exception has a documented, risk-reviewed temporary waiver.
+- **Testing:** Run affected web/editor/render-service builds and tests after every dependency group update.
+
+### Regenerate the API dependency lock
+- **Problem:** `apps/api` CI setup fails because `uv.lock` is stale relative to `pyproject.toml`.
+- **Relevant files:** `apps/api/pyproject.toml`, `apps/api/uv.lock`.
+- **Expected behavior:** A current lockfile faithfully represents the project metadata.
+- **Acceptance criteria:** `uv lock --check` and `uv sync --locked --extra dev` succeed on a clean Python 3.12 runner.
+- **Testing:** Run the complete API pytest suite after lock regeneration.
+
 ### Require render-service authentication in deployed environments
 - **Problem:** Non-health routes are unauthenticated when `RENDER_SERVICE_API_KEY` is unset.
 - **Relevant files:** `render-service/src/config.ts`, `render-service/src/api/routes.ts`, `render-service/src/api/routes.test.ts`, `infrastructure/docker-compose.yml`.
