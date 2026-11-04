@@ -6,7 +6,7 @@ The repository contains a Next.js editor, FastAPI backend, Temporal orchestratio
 
 > **Project status:** Active development / experimental. The repository contains an end-to-end generation and export path, but authentication/platform migration, billing enforcement, some template capabilities, production security hardening and contributor automation remain incomplete. See [known limitations](#known-limitations).
 
-> **Licensing status:** No repository-level licence has been selected or added. Until that is resolved, do not assume this repository grants permission to reuse, modify, or redistribute its code.
+> **License:** This repository includes the Apache License, Version 2.0 (`LICENSE`). Review that license and the notices for third-party dependencies, fonts, media, and other bundled assets before redistribution. The presence of a project license does not relicense third-party materials.
 
 ## What is in the repository
 
