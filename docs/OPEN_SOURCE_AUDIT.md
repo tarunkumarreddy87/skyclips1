@@ -34,7 +34,7 @@ No confirmed critical vulnerability was established by this static inspection. R
    GitHub Actions run `41919145743` reports 130 advisories: 4 critical, 56 high, 60 moderate and 10 low. Examples include `next@15.5.20` (critical; listed patched floor at least `15.5.28` for the SVG optimizer advisory), `fastify@5.10.0` (high; patched floor `5.12.2`), and `proxy-addr@2.0.7` (critical; patched floor `2.0.8`). These are advisory findings in the dependency graph, not 130 proven exploitable Skyclip defects. Triage by dependency path, upgrade compatible direct/transitive packages and rerun tests. CI correctly fails this gate until findings are resolved.
 
 2. **Render-service authentication was optional on the baseline (remediated in this branch and verified by CI).**  
-   At the audited ref, `render-service/src/api/routes.ts` skipped key verification when `RENDER_SERVICE_API_KEY` was empty. The remediation branch now asserts a non-empty key at production service startup, and the container image sets `NODE_ENV=production`. Test coverage has been added but not executed. Deployments must supply a strong key.
+   At the audited ref, `render-service/src/api/routes.ts` skipped key verification when `RENDER_SERVICE_API_KEY` was empty. The remediation branch now asserts a non-empty key at production service startup, and the container image sets `NODE_ENV=production`. A focused regression suite passed in CI (production missing/blank key is rejected; configured key is accepted; development/test remain usable). Deployments must supply a strong key.
 
 3. **Remote media fetch can access arbitrary URLs (potential SSRF; confirmed code path, exploitability depends on manifest trust boundary).**  
    `workers/media/src/render/native_pipeline.py::stage_assets` calls `urllib.request.urlopen(src)` for HTTP(S) media without an evident scheme/host/IP allowlist or redirect revalidation. If a caller can cause a manifest to contain attacker-controlled URLs, the worker may reach internal services or cloud metadata endpoints. Add an allowlist/egress policy, reject loopback/private/link-local/reserved IPs after DNS resolution, revalidate redirects, and use size/time limits. Confirm all routes that can populate timeline source URLs before release.
@@ -44,8 +44,8 @@ No confirmed critical vulnerability was established by this static inspection. R
 
 ### Medium
 
-1. **CI is newly added on the remediation branch but unverified.**  
-   The baseline had no workflows. The branch now adds checks for Node tests/typechecks/build, Python test suites, Compose configuration, dependency audits and Gitleaks. No workflow execution result is available yet.
+1. **CI is newly added and partially verified.**  
+   The baseline had no workflows. Run `41919145743` shows Compose validation and Gitleaks passing; video-engine tests 23/23; render-service tests 18 passed and 2 skipped; render-service typecheck/build passed; web typecheck passed and editor round-trip tests 3/3; orchestrator tests passed. The media-worker pytest suite remained in progress at the time of this update. API tests are blocked before pytest because its lockfile is stale. The dependency audit exits non-zero on the reported high/critical advisories.
 
 2. **A root development environment template is newly added on the remediation branch.**  
    The baseline README quick start referenced a missing root `.env.example`. The remediation branch adds one with local development placeholders. Supabase placeholders are not working credentials; a user-owned Supabase project is required for real authentication.
@@ -120,7 +120,7 @@ Existing tests include:
 - `workers/orchestrator/tests/` for pipeline/workflow activities.
 - `apps/api/tests/` for API routes/services.
 
-**Tests were not executed as part of this remote audit.** The GitHub connector provides file access but not a shell in the repository checkout. A local clone or CI run is required to report real results. No test pass/fail claims are made.
+**Static audit tests were not run in a local checkout.** CI did execute multiple suites on the remediation branch: video engine 23/23 passed; render service 18 passed and 2 skipped; web editor round-trip 3/3 passed; orchestrator suite passed. Media-worker pytest was still running when this document was updated; API pytest did not start because `uv sync --locked` detected a stale lockfile. No coverage percentage is claimed.
 
 ## Remaining remediation order
 
