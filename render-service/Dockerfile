@@ -21,6 +21,7 @@ COPY render-service render-service
 COPY apps/web/public/sfx render-service/static/sfx
 RUN python3 -m venv /app/.venv \
     && /app/.venv/bin/pip install --no-cache-dir ./packages/shared-types/python ./workers/media
+ENV NODE_ENV=production
 ENV RENDER_ENGINE=native-local
 ENV RENDER_PYTHON_EXECUTABLE=/app/.venv/bin/python
 WORKDIR /app/render-service
