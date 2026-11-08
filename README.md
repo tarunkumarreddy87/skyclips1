@@ -207,18 +207,17 @@ See [SECURITY.md](SECURITY.md) and [docs/SECURITY_AUDIT.md](docs/SECURITY_AUDIT.
 
 ## Licence
 
-**Not yet selected.** A public GitHub repository without a licence does not grant the usual open-source permissions. The maintainer must select and confirm a licence after reviewing dependency, font, media and other third-party rights. Do not add or infer a licence from package dependencies.
+The repository includes the Apache License, Version 2.0 in `LICENSE`. The maintainer must confirm authority to license all project-authored code under Apache-2.0 and complete the third-party dependency, font, media and asset attribution review before redistribution. The root licence does not relicense third-party materials.
 
 ## Known limitations
 
 - Authentication and platform migration are not fully reconciled across all services; stub mode is for development only.
 - Credit metering enforcement is not complete.
 - The generic SVG scene renderer does not execute arbitrary uploaded HTML/CSS/JavaScript templates; HTML/GSAP and Three.js have distinct rendering paths and capability limits.
-- External media URL ingestion needs SSRF-safe destination controls before accepting untrusted URLs in production.
-- Render-service API authentication must be required in deployed environments; an unset key currently disables its API-key check.
+- One manifest-media staging path still needs SSRF-safe URL validation, redirect and DNS/IP revalidation, bounded downloads and deployment-level egress restrictions before processing untrusted remote URLs.
+- Production render-service startup now fails closed when `RENDER_SERVICE_API_KEY` is missing or blank; every production deployment must configure a strong secret.
 - Graphics rasterization and significant media composition work are CPU-based; NVENC, when available, accelerates encoding only.
 - No independently reproduced render-speed comparison against commercial editors is published.
-- The repository has no selected licence at this point.
 
 See [docs/OPEN_SOURCE_AUDIT.md](docs/OPEN_SOURCE_AUDIT.md), [docs/ROADMAP.md](docs/ROADMAP.md) and [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
